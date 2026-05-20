@@ -1,0 +1,65 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ] # main branch'ine push yapýldýðýnda çalýþýr
+
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPOSITORY: link-shortener-backend
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Kodu GitHub runner'a çekiyoruz
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 2. AWS Kimlik Doðrulamasý yapýyoruz
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    # 3. AWS ECR'a giriþ yapýyoruz
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    # 4. Docker imajýný build edip ECR'a pushluyoruz (Tag olarak Commit SHA kullanýyoruz)
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+        echo "image=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    # 5. GitOps reposundaki imaj tag'ini güncelliyoruz (CD Tetikleme)
+    - name: Update GitOps Manifest
+      env:
+        GITOPS_TOKEN: ${{ secrets.GITOPS_PAT }}
+        IMAGE_TAG: ${{ github.sha }}
+        AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      run: |
+        # GitOps reposunu geçici olarak klonluyoruz
+        git config --global user.email "action@github.com"
+        git config --global user.name "GitHub Action"
+        git clone https://${{ env.GITOPS_TOKEN }}@github.com/${{ github.repository_owner }}/link-shortener-gitops.git
+        cd link-shortener-gitops/environments/dev
+        
+        # Kustomize dosyasýndaki eski imaj ve tag bilgilerini yenisiyle güncelliyoruz
+        # Not: Buradaki name parametresi base/deployment.yaml içindeki container image adý ile eþleþmelidir.
+        sed -i "s|newName: .*|newName: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}|g" kustomization.yaml
+        sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|g" kustomization.yaml
+        
+        # Deðiþiklikleri GitOps reposuna pushluyoruz
+        git add kustomization.yaml
+        git commit -m "chore: update backend image tag to ${IMAGE_TAG} [skip ci]"
+        git push origin main
