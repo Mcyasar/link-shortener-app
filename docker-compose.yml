@@ -1,40 +1,27 @@
 version: '3.8'
 
 services:
-  # 1. Redis Konteyneri
-  redis:
-    image: redis:7-alpine
-    container_name: linkshortener-redis
-    ports:
-      - "6379:6379"
-    networks:
-      - linkshortener-network
-
-  # 2. DynamoDB Konteyneri (Yerel AWS Simülasyonu)
-  dynamodb:
+  # 1. AWS DynamoDB yerine: DynamoDB Local
+  local-dynamodb:
     image: amazon/dynamodb-local:latest
-    container_name: linkshortener-dynamodb
+    container_name: link-shortener-local-dynamodb
+    user: root
     ports:
       - "8000:8000"
-    command: "-jar DynamoDBLocal.jar -sharedDb"
-    networks:
-      - linkshortener-network
+    volumes:
+      - dynamodb_data:/home/dynamodblocal/data
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data"
 
-  # 3. DynamoDB Admin Arayüzü (Verileri görsel olarak görebilmek için)
-  dynamodb-admin:
-    image: aaronshaf/dynamodb-admin:latest
-    container_name: linkshortener-dynamodb-admin
+  # 2. AWS ElastiCache yerine: Redis Alpine
+  local-redis:
+    image: redis:alpine
+    container_name: link-shortener-local-redis
     ports:
-      - "8001:8001"
-    environment:
-      - DYNAMO_ENDPOINT=http://dynamodb:8000
-    depends_on:
-      - dynamodb
-    networks:
-      - linkshortener-network
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
 
-  # 4. PostgreSQL Konteyneri
-  postgres:
+  local-postgres:
     image: postgres:16-alpine
     container_name: linkshortener-postgres
     ports:
@@ -43,9 +30,10 @@ services:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=secretpassword
       - POSTGRES_DB=linkshortener_db
-    networks:
-      - linkshortener-network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
-networks:
-  linkshortener-network:
-    driver: bridge
+volumes:
+  dynamodb_data:
+  redis_data:
+  postgres_data:

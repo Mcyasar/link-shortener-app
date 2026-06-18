@@ -2,7 +2,7 @@
 using LinkShortener.Domain.Entities;
 using LinkShortener.Domain.Interfaces;
 using LinkShortener.Domain.ValueObjects;
-using LinkShortener.Application.Interfaces; // Bu klasörde reposu tanımlayacağız
+using LinkShortener.Application.Interfaces;
 
 namespace LinkShortener.Application.Features.ShortenedLinks.Commands.CreateShortLink;
 

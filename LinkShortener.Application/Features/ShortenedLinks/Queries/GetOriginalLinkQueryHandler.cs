@@ -18,6 +18,7 @@ public sealed class GetOriginalLinkQueryHandler : IRequestHandler<GetOriginalLin
 
     public async Task<string> Handle(GetOriginalLinkQuery request, CancellationToken cancellationToken)
     {
+
         string cacheKey = $"link:{request.ShortCode}";
 
         // 1. Önce Cache (Redis) kontrol edilir
@@ -54,5 +55,6 @@ public sealed class GetOriginalLinkQueryHandler : IRequestHandler<GetOriginalLin
             cancellationToken);
 
         return shortenedLink.OriginalUrl.Value;
+
     }
 }

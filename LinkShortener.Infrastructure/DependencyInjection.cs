@@ -12,6 +12,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using LinkShortener.Application.Services;
+using LinkShortener.Infrastructure.BackgroundWorkers;
+using LinkShortener.Infrastructure.Resilience;
+using LinkShortener.Infrastructure.Services;
 
 namespace LinkShortener.Infrastructure;
 
@@ -53,7 +59,7 @@ public static class DependencyInjection
         services.AddDefaultAWSOptions(awsOptions);
 
         // appsettings.Development.json içindeki yerel endpoint adresini kontrol ediyoruz
-        string? localDynamoUrl = configuration["AWS:LocalDynamoDBUrl"];
+        string? localDynamoUrl = configuration["AWS:ServiceURL"];
 
         if (!string.IsNullOrEmpty(localDynamoUrl))
         {
@@ -93,13 +99,29 @@ public static class DependencyInjection
             options.Configuration = configuration.GetConnectionString("Redis");
         });
 
+        services.AddResilienceStrategy();
+        services.AddCustomDistributedRateLimiter();
+
         // Bizim Application katmanına sunduğumuz önbellek arayüzünün (kontratının) eşlenmesi
         services.AddScoped<ICacheService, RedisCacheService>();
 
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IPasswordHasher, BCryptPasswordHasher>();
 
-        services.AddCustomDistributedRateLimiter(configuration);
+        services.AddScoped<IRefreshTokenService, DynamoDbRefreshTokenService>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddBackgroundWorkerServices(this IServiceCollection services)
+    {
+        // 1. CHANNEL: Bellekte tek bir kuyruk olması için kesinlikle Singleton!
+        services.AddSingleton<ILinkClickChannel, LinkClickChannel>();
+
+        // 2. WORKER: Arka planda sürekli çalışacak olan Hosted Service/BackgroundService kaydı.
+        // .NET mimarisinde arka plan işçileri AddHostedService metoduyla tescillenir.
+        // Bu metot arka planda o sınıfı otomatik olarak Singleton olarak yönetir.
+        services.AddHostedService<LinkClickProcessorWorker>();
 
         return services;
     }
@@ -107,43 +129,140 @@ public static class DependencyInjection
 
 public static class DynamoDbInitializer
 {
-    public static async Task EnsureTablesCreatedAsync(this IApplicationBuilder app)
+    public static async Task EnsureShortenedLinksTableCreatedAsync(this IApplicationBuilder app, CancellationToken cancellationToken = default)
     {
         using var scope = app.ApplicationServices.CreateScope();
-        var client = scope.ServiceProvider.GetRequiredService<IAmazonDynamoDB>();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
+        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("DynamoDbInitializer");
 
-        const string tableName = "ShortenedLinks";
+        // 🚨 GÜVENLİK DUVARI: Sadece yerel geliştirme (Local Docker) ortamında çalışsın!
+        if (!environment.IsDevelopment()) return;
+
+        var client = scope.ServiceProvider.GetRequiredService<IAmazonDynamoDB>();
+        const string tableName = "ShortenedLinks"; // Repository ile eşitlendi!
 
         try
         {
-            // 1. Tablo var mı diye kontrol etmeyi deniyoruz
+            logger.LogInformation("⏳ [DynamoDB Local] '{TableName}' tablosu kontrol ediliyor...", tableName);
             await client.DescribeTableAsync(tableName);
+            logger.LogInformation("✅ [DynamoDB Local] '{TableName}' tablosu zaten mevcut ve aktif.", tableName);
         }
         catch (ResourceNotFoundException)
         {
-            // 2. Tablo bulunamadı hatası alırsak, hemen pürüzsüzce oluşturuyoruz
+            logger.LogWarning("🛠️ [DynamoDB Local] '{TableName}' tablosu bulunamadı, mevcut Repository şeması ve GSI indeksiyle birlikte oluşturuluyor...", tableName);
+
             var request = new CreateTableRequest
             {
                 TableName = tableName,
+                // 1. Şema Alan Tanımları (Repository'deki ShortCode + Gelecekteki Listeleme İndeksi için UserId ve CreatedAt)
                 AttributeDefinitions = new List<AttributeDefinition>
                 {
-                    new() { AttributeName = "ShortCode", AttributeType = ScalarAttributeType.S }
+                    new() { AttributeName = "ShortCode", AttributeType = ScalarAttributeType.S }, // Repository ile eşitlendi!
+                    new() { AttributeName = "UserId", AttributeType = ScalarAttributeType.S },    // GSI için gerekli
+                    new() { AttributeName = "CreatedAt", AttributeType = ScalarAttributeType.S } // GSI için gerekli
                 },
+                // 2. Primary Key (Partition Key = ShortCode)
                 KeySchema = new List<KeySchemaElement>
                 {
-                    new() { AttributeName = "ShortCode", KeyType = KeyType.HASH } // Partition Key
+                    new() { AttributeName = "ShortCode", KeyType = KeyType.HASH } // Repository ile eşitlendi!
                 },
                 ProvisionedThroughput = new ProvisionedThroughput
                 {
                     ReadCapacityUnits = 5,
                     WriteCapacityUnits = 5
+                },
+                // 🔥 GELECEĞE YATIRIM: Kullanıcı bazlı "en yeniden eskiye" link listeleme indeksi (GSI)
+                GlobalSecondaryIndexes = new List<GlobalSecondaryIndex>
+                {
+                    new()
+                    {
+                        IndexName = "UserLinksIndex",
+                        KeySchema = new List<KeySchemaElement>
+                        {
+                            new() { AttributeName = "UserId", KeyType = KeyType.HASH },     // GSI Partition Key
+                            new() { AttributeName = "CreatedAt", KeyType = KeyType.RANGE } // GSI Sort Key (Sıralama için)
+                        },
+                        Projection = new Projection { ProjectionType = ProjectionType.ALL },
+                        ProvisionedThroughput = new ProvisionedThroughput { ReadCapacityUnits = 5, WriteCapacityUnits = 5 }
+                    }
                 }
             };
 
             await client.CreateTableAsync(request);
+            logger.LogInformation("🎉 [DynamoDB Local] '{TableName}' tablosu, ShortCode anahtarı ve UserLinksIndex ile başarıyla oluşturuldu.", tableName);
 
-            // Tablonun tamamen aktifleşmesi için local ortamda 1-2 saniye bekletiyoruz
+            // Tablonun local container içinde tamamen hazır hale gelmesi için küçük bir nefes payı
             await Task.Delay(2000);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "❌ [DynamoDB Local] Tablo oluşturma aşamasında beklenmeyen bir hata oluştu!");
+        }
+    }
+
+    public static async Task EnsureUserRefreshTokensTableCreatedAsync(this IApplicationBuilder app, CancellationToken cancellationToken = default)
+    {
+        using var scope = app.ApplicationServices.CreateScope();
+        var environment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
+        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("DynamoDbInitializer");
+
+        // 🚨 GÜVENLİK DUVARI: Sadece yerel geliştirme (Local Docker) ortamında çalışsın!
+        if (!environment.IsDevelopment()) return;
+
+        var dynamoDbClient = scope.ServiceProvider.GetRequiredService<IAmazonDynamoDB>();
+
+        const string tableName = "UserRefreshTokens";
+
+        try
+        {
+            // 1. Tablo var mı kontrol et
+            await dynamoDbClient.DescribeTableAsync(tableName, cancellationToken);
+        }
+        catch (ResourceNotFoundException)
+        {
+            // 2. Tablo yoksa sıfırdan oluşturma isteği hazırla
+            var createTableRequest = new CreateTableRequest
+            {
+                TableName = tableName,
+                //BillingMode = BillingMode.PAY_PER_REQUEST,
+                AttributeDefinitions = new List<AttributeDefinition>
+                {
+                    new() { AttributeName = "UserId", AttributeType = ScalarAttributeType.S },
+                    new() { AttributeName = "Token", AttributeType = ScalarAttributeType.S }
+                },
+                KeySchema = new List<KeySchemaElement>
+                {
+                    new() { AttributeName = "UserId", KeyType = KeyType.HASH }, // Partition Key
+                    new() { AttributeName = "Token", KeyType = KeyType.RANGE }  // Sort Key
+                }
+            };
+
+            await dynamoDbClient.CreateTableAsync(createTableRequest, cancellationToken);
+            logger.LogInformation("🎉 [DynamoDB Local] '{TableName}' tablosu başarıyla oluşturuldu.", tableName);
+            
+            // Local DynamoDB'nin tabloyu tamamen hazır hale getirmesi için çok kısa bir an bekleme (Opsiyonel)
+            await Task.Delay(1000, cancellationToken);
+
+            // 3. 🔥 EN KRİTİK DETAY: TTL Özelliğini Otomatik Aktifleştir
+            var updateTimeToLiveRequest = new UpdateTimeToLiveRequest
+            {
+                TableName = tableName,
+                TimeToLiveSpecification = new TimeToLiveSpecification
+                {
+                    Enabled = true,
+                    AttributeName = "ExpiresAtTimestamp" // Bizim entity'deki long değerimizle eşleşiyor
+                }
+            };
+
+            await dynamoDbClient.UpdateTimeToLiveAsync(updateTimeToLiveRequest, cancellationToken);
+            //Console.WriteLine($"[INFO] DynamoDB '{tableName}' tablosu ve TTL aktivasyonu başarıyla kuruldu.");
+            logger.LogInformation("[INFO]🎉 [DynamoDB Local] '{TableName}' tablosu ve TTL aktivasyonu başarıyla kuruldu.", tableName);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "❌ [DynamoDB Local] Tablo oluşturma aşamasında beklenmeyen bir hata oluştu!");
         }
     }
 }

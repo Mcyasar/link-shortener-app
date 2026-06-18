@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # 1. Redis Konteyneri
+  redis:
+    image: redis:7-alpine
+    container_name: linkshortener-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - linkshortener-network
+
+  # 2. DynamoDB Konteyneri (Yerel AWS Simülasyonu)
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: linkshortener-dynamodb
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb"
+    networks:
+      - linkshortener-network
+
+  # 3. DynamoDB Admin Arayüzü (Verileri görsel olarak görebilmek için)
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin:latest
+    container_name: linkshortener-dynamodb-admin
+    ports:
+      - "8001:8001"
+    environment:
+      - DYNAMO_ENDPOINT=http://dynamodb:8000
+    depends_on:
+      - dynamodb
+    networks:
+      - linkshortener-network
+
+  # 4. PostgreSQL Konteyneri
+  postgres:
+    image: postgres:16-alpine
+    container_name: linkshortener-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=secretpassword
+      - POSTGRES_DB=linkshortener_db
+    networks:
+      - linkshortener-network
+
+networks:
+  linkshortener-network:
+    driver: bridge

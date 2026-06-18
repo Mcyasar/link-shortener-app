@@ -2,6 +2,7 @@
 using LinkShortener.Application.Features.ShortenedLinks.Events;
 using LinkShortener.Application.Features.ShortenedLinks.Queries.GetOriginalLink;
 using LinkShortener.Application.Interfaces;
+using LinkShortener.Infrastructure.Resilience;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +14,8 @@ namespace LinkShortener.API.Controllers;
 [ApiController]
 [Route("api/links")]
 [Authorize] // Güvenlik Çemberi: Bu controller altındaki tüm işlemler varsayılan olarak JWT Token gerektirir.
-[EnableRateLimiting("FixedWindowPolicy")]
+//[EnableRateLimiting("FixedWindowPolicy")]
+[EnableRateLimiting("dynamic-parametric-policy")]
 public sealed class ShortenedLinksController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -29,6 +31,7 @@ public sealed class ShortenedLinksController : ControllerBase
     [HttpPost]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [CustomRateLimit(permitLimit: 15, windowInSeconds: 1)]
     public async Task<IActionResult> Create([FromBody] CreateShortLinkRequest request, CancellationToken cancellationToken)
     {
         // JWT içinden giriş yapan kullanıcının ID'sini (UUID v7) güvenle okuyoruz
@@ -61,6 +64,7 @@ public sealed class ShortenedLinksController : ControllerBase
     [AllowAnonymous] // KRİTİK İSTİSNA: Linke tıklayan dış ziyaretçilerin JWT Token'a ihtiyacı yoktur!
     [ProducesResponseType(StatusCodes.Status302Found)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [CustomRateLimit(permitLimit: 100, windowInSeconds: 1)]
     public async Task<IActionResult> RedirectToOriginal(string shortCode, 
         [FromServices] ILinkClickChannel clickChannel, // Kanalı inject ediyoruz
         CancellationToken cancellationToken)

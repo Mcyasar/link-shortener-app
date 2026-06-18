@@ -12,41 +12,42 @@ builder.Services.AddAuthentication(options =>
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 });
 
-// 1. Katmanlarýn Baðýmlýlýk Enjeksiyonlarýný (DI) Baðlýyoruz
+// 1. Katmanlarï¿½n Baï¿½ï¿½mlï¿½lï¿½k Enjeksiyonlarï¿½nï¿½ (DI) Baï¿½lï¿½yoruz
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddBackgroundWorkerServices();
 
 builder.Services.AddControllers();
 
-// 2. Güvenlik: Rate Limiting (Hýz Sýnýrý) Ayarlarý
-// API'mizin saniyede binlerce istek atan botlar tarafýndan çökertilmesini engelliyoruz
-///// ---> Redis tabanlý rate limiter infra katmaný üzerinden eklendiði için bu kod parçasý commentlendi
+// 2. Gï¿½venlik: Rate Limiting (Hï¿½z Sï¿½nï¿½rï¿½) Ayarlarï¿½
+// API'mizin saniyede binlerce istek atan botlar tarafï¿½ndan ï¿½ï¿½kertilmesini engelliyoruz
+///// ---> Redis tabanlï¿½ rate limiter infra katmanï¿½ ï¿½zerinden eklendiï¿½i iï¿½in bu kod parï¿½asï¿½ commentlendi
 //builder.Services.AddRateLimiter(options =>
 //{
 //    options.AddFixedWindowLimiter(policyName: "FixedWindowPolicy", fixedOptions =>
 //    {
-//        fixedOptions.PermitLimit = 10; // 60 saniyede maksimum 10 isteðe izin ver
+//        fixedOptions.PermitLimit = 10; // 60 saniyede maksimum 10 isteï¿½e izin ver
 //        fixedOptions.Window = TimeSpan.FromSeconds(60);
 //        fixedOptions.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
 //        fixedOptions.QueueLimit = 2; // Kuyrukta bekleyebilecek maksimum istek
 //    });
 
-//    // Sýnýr aþýldýðýnda istemciye döneceðimiz yanýt
+//    // Sï¿½nï¿½r aï¿½ï¿½ldï¿½ï¿½ï¿½nda istemciye dï¿½neceï¿½imiz yanï¿½t
 //    options.OnRejected = async (context, token) =>
 //    {
 //        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-//        await context.HttpContext.Response.WriteAsync("Çok fazla istek attýnýz. Lütfen biraz bekleyin.", cancellationToken: token);
+//        await context.HttpContext.Response.WriteAsync("ï¿½ok fazla istek attï¿½nï¿½z. Lï¿½tfen biraz bekleyin.", cancellationToken: token);
 //    };
 //});
 
-// Swagger/OpenAPI Desteði (.NET 9.0 yerleþik OpenAPI desteði)
+// Swagger/OpenAPI Desteï¿½i (.NET 9.0 yerleï¿½ik OpenAPI desteï¿½i)
 builder.Services.AddOpenApi("v1", options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
     {
         document.Components ??= new OpenApiComponents();
 
-        // JWT Bearer Güvenlik Þemasýný OpenAPI 3.1 standartlarýna uygun tanýmlýyoruz
+        // JWT Bearer Gï¿½venlik ï¿½emasï¿½nï¿½ OpenAPI 3.1 standartlarï¿½na uygun tanï¿½mlï¿½yoruz
         var securityScheme = new OpenApiSecurityScheme
         {
             Name = "Authorization",
@@ -54,7 +55,7 @@ builder.Services.AddOpenApi("v1", options =>
             Scheme = JwtBearerDefaults.AuthenticationScheme,
             BearerFormat = "JWT",
             In = ParameterLocation.Header,
-            Description = "JWT Token deðerinizi baþýna 'Bearer ' koyarak yazýnýz. Örnek: 'Bearer eyJhbGciOi...'"
+            Description = "JWT Token deï¿½erinizi baï¿½ï¿½na 'Bearer ' koyarak yazï¿½nï¿½z. ï¿½rnek: 'Bearer eyJhbGciOi...'"
         };
 
         document.Components.SecuritySchemes[JwtBearerDefaults.AuthenticationScheme] = securityScheme;
@@ -76,43 +77,45 @@ builder.Services.AddOpenApi("v1", options =>
     });
 });
 
-
-
 var app = builder.Build();
 
 app.UseRouting();
 
+#if DEBUG
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
     {
         options.WithTitle("Link Shortener API")
-               .WithOpenApiRoutePattern("/openapi/v1.json"); // Þemanýn çekileceði tam adres
+               .WithOpenApiRoutePattern("/openapi/v1.json"); // ï¿½emanï¿½n ï¿½ekileceï¿½i tam adres
     });
 
-    await app.EnsureTablesCreatedAsync();
+    await app.EnsureShortenedLinksTableCreatedAsync();
+    await app.EnsureUserRefreshTokensTableCreatedAsync();
 }
-
-// Rate Limiter Middleware'ini aktif ediyoruz
-app.UseRateLimiter();
+#endif
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseRateLimiter();
 
-app.UseHttpsRedirection();
-
+#if RELEASE
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+#endif
 
 // --- API ENDPOINTS (Minimal APIs) ---
 
-// 1. UÇ: Link Kýsaltma (Write/Command) - Rate Limiting Korumalý
+// 1. Uï¿½: Link Kï¿½saltma (Write/Command) - Rate Limiting Korumalï¿½
 //app.MapPost("/api/links", async (CreateShortLinkCommand command, IMediator mediator) =>
 //{
 //    try
 //    {
-//        // MediatR vasýtasýyla isteði Application katmanýndaki Handler'a fýrlatýyoruz
+//        // MediatR vasï¿½tasï¿½yla isteï¿½i Application katmanï¿½ndaki Handler'a fï¿½rlatï¿½yoruz
 //        var shortCode = await mediator.Send(command);
 //        return Results.Ok(new { ShortCode = shortCode, ShortUrl = $"/r/{shortCode}" });
 //    }
@@ -122,23 +125,23 @@ app.UseHttpsRedirection();
 //    }
 //})
 //.WithName("CreateShortLink")
-//.RequireRateLimiting("FixedWindowPolicy"); // Politikamýzý baðladýk
+//.RequireRateLimiting("FixedWindowPolicy"); // Politikamï¿½zï¿½ baï¿½ladï¿½k
 
 
-//// 2. UÇ: Link Yönlendirme (Read/Query) - Sistemdeki en yüksek performanslý yer!
+//// 2. Uï¿½: Link Yï¿½nlendirme (Read/Query) - Sistemdeki en yï¿½ksek performanslï¿½ yer!
 //app.MapGet("/r/{shortCode}", async (string shortCode, IMediator mediator) =>
 //{
 //    try
 //    {
-//        // Önce Cache'e, yoksa DynamoDB'ye giden sorguyu tetikliyoruz
+//        // ï¿½nce Cache'e, yoksa DynamoDB'ye giden sorguyu tetikliyoruz
 //        var originalUrl = await mediator.Send(new GetOriginalLinkQuery(shortCode));
 
-//        // Kullanýcýyý 302 (Found) geçici yönlendirmesiyle orijinal siteye uçuruyoruz
+//        // Kullanï¿½cï¿½yï¿½ 302 (Found) geï¿½ici yï¿½nlendirmesiyle orijinal siteye uï¿½uruyoruz
 //        return Results.Redirect(originalUrl, permanent: false);
 //    }
 //    catch (KeyNotFoundException)
 //    {
-//        return Results.NotFound(new { Message = "Böyle bir kýsa link bulunamadý." });
+//        return Results.NotFound(new { Message = "Bï¿½yle bir kï¿½sa link bulunamadï¿½." });
 //    }
 //    catch (InvalidOperationException ex)
 //    {

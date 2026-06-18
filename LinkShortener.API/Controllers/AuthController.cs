@@ -2,11 +2,14 @@
 using Microsoft.AspNetCore.Mvc;
 using LinkShortener.Application.Features.Users.Commands.RegisterUser;
 using LinkShortener.Application.Features.Users.Queries.LoginUser;
+using Microsoft.AspNetCore.RateLimiting;
+using LinkShortener.Infrastructure.Resilience;
 
 namespace LinkShortener.API.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+[EnableRateLimiting("dynamic-parametric-policy")]
 public sealed class AuthController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -22,6 +25,7 @@ public sealed class AuthController : ControllerBase
     [HttpPost("register")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [CustomRateLimit(permitLimit: 15, windowInSeconds: 1)]
     public async Task<IActionResult> Register([FromBody] RegisterUserCommand command, CancellationToken cancellationToken)
     {
         try
@@ -44,6 +48,7 @@ public sealed class AuthController : ControllerBase
     [HttpPost("login")]
     [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [CustomRateLimit(permitLimit: 100, windowInSeconds: 1)]
     public async Task<IActionResult> Login([FromBody] LoginUserQuery query, CancellationToken cancellationToken)
     {
         try
