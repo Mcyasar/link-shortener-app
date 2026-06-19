@@ -4,6 +4,10 @@ using LinkShortener.Application.Features.Users.Commands.RegisterUser;
 using LinkShortener.Application.Features.Users.Queries.LoginUser;
 using Microsoft.AspNetCore.RateLimiting;
 using LinkShortener.Infrastructure.Resilience;
+using LinkShortener.Application.Features.Users.Commands.LogoutUser;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace LinkShortener.API.Controllers;
 
@@ -64,5 +68,43 @@ public sealed class AuthController : ControllerBase
             // Geçersiz e-posta veya şifre hatalarında 401 Unauthorized fırlatıyoruz
             return Unauthorized(new { Message = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Kullanıcının mevcut oturumunu sonlandırır ve Access Token'ı blacklist'e ekler.
+    /// Ayrıca, kullanıcının tüm Refresh Token'larını iptal eder.
+    /// </summary>
+    [Authorize] // Bu endpoint sadece yetkili kullanıcılar tarafından çağrılabilir
+    [HttpPost("logout")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [CustomRateLimit(permitLimit: 5, windowInSeconds: 1)]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        // JWT içinden giriş yapan kullanıcının ID'sini ve JWT ID'sini (jti) güvenle okuyoruz
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var jwtIdClaim = User.FindFirst(JwtRegisteredClaimNames.Jti)?.Value;
+        var expirationClaim = User.FindFirst(JwtRegisteredClaimNames.Exp)?.Value;
+
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new { Message = "Geçersiz veya eksik kullanıcı kimliği." });
+        }
+        if (string.IsNullOrEmpty(jwtIdClaim))
+        {
+            return Unauthorized(new { Message = "JWT ID (jti) bulunamadı." });
+        }
+        if (string.IsNullOrEmpty(expirationClaim) || !long.TryParse(expirationClaim, out var expirationUnixTimestamp))
+        {
+            return Unauthorized(new { Message = "Token son kullanma tarihi bulunamadı." });
+        }
+
+        var expirationDateTime = DateTimeOffset.FromUnixTimeSeconds(expirationUnixTimestamp).UtcDateTime;
+        var remainingLifetime = expirationDateTime - DateTime.UtcNow;
+
+        // Eğer token zaten süresi dolmuşsa, en az 1 saniye blacklist'te kalmasını sağla
+        var command = new LogoutCommand(jwtIdClaim, userId, remainingLifetime > TimeSpan.Zero ? remainingLifetime : TimeSpan.FromSeconds(1));
+        var result = await _mediator.Send(command, cancellationToken);
+        return result.IsSuccess ? Ok(new { Message = "Başarıyla çıkış yapıldı." }) : Unauthorized(new { Message = result.Error?.Message });
     }
 }

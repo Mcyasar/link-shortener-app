@@ -25,6 +25,8 @@ public sealed class LoginUserQueryHandler : IRequestHandler<LoginUserQuery, Logi
 
     public async Task<LoginResponseDto> Handle(LoginUserQuery request, CancellationToken cancellationToken)
     {
+        ///TODO: result pattern ile hata yönetimi yapılabilir. Şu an UnauthorizedAccessException fırlatılıyor.
+        
         var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
         if (user is null)
             throw new UnauthorizedAccessException("Geçersiz e-posta veya şifre.");
