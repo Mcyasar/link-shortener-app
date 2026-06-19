@@ -8,11 +8,21 @@ public sealed class UserRefreshToken
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime ExpiresAt { get; set; }
     public DateTime? RevokedAt { get; set; }
+    public string? RevokedByIp { get; set; }
 
     // Altyapı katmanında TTL attribute ismi olarak "ExpiresAtTimestamp" eşlemesi yapacağız
     public long ExpiresAtTimestamp => new DateTimeOffset(ExpiresAt).ToUnixTimeSeconds();
 
     public bool IsExpired => DateTime.UtcNow >= ExpiresAt;
-    public bool IsRevoked => RevokedAt != null;
+    public bool IsRevoked => RevokedAt.HasValue;
     public bool IsActive => !IsRevoked && !IsExpired;
+
+    public void Revoke(string revokedByIp)
+    {
+        if (!IsRevoked)
+        {
+            RevokedAt = DateTime.UtcNow;
+            RevokedByIp = revokedByIp;
+        }
+    }
 }

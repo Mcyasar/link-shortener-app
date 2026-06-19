@@ -51,9 +51,12 @@ public sealed class AuthController : ControllerBase
     [CustomRateLimit(permitLimit: 100, windowInSeconds: 1)]
     public async Task<IActionResult> Login([FromBody] LoginUserQuery query, CancellationToken cancellationToken)
     {
+        // Kullanıcının IP adresini alıyoruz
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         try
         {
-            var response = await _mediator.Send(query, cancellationToken);
+            // Query'ye IP adresini ekleyerek gönderiyoruz
+            var response = await _mediator.Send(query with { ClientIpAddress = clientIp }, cancellationToken);
             return Ok(response);
         }
         catch (UnauthorizedAccessException ex)
