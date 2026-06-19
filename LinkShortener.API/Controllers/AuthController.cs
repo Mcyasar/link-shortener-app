@@ -8,6 +8,8 @@ using LinkShortener.Application.Features.Users.Commands.LogoutUser;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using LinkShortener.API.Models;
+using LinkShortener.Application.Features.Users.Commands.RefreshToken; // Yeni DTO'yu kullanmak için ekledik
 
 namespace LinkShortener.API.Controllers;
 
@@ -106,5 +108,32 @@ public sealed class AuthController : ControllerBase
         var command = new LogoutCommand(jwtIdClaim, userId, remainingLifetime > TimeSpan.Zero ? remainingLifetime : TimeSpan.FromSeconds(1));
         var result = await _mediator.Send(command, cancellationToken);
         return result.IsSuccess ? Ok(new { Message = "Başarıyla çıkış yapıldı." }) : Unauthorized(new { Message = result.Error?.Message });
+    }
+
+    /// <summary>
+    /// Geçerli bir Refresh Token kullanarak yeni bir Access Token ve Refresh Token çifti üretir.
+    /// </summary>
+    [HttpPost("refresh")]
+    [ProducesResponseType(typeof(LoginResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [CustomRateLimit(permitLimit: 5, windowInSeconds: 1)]
+    public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest request, CancellationToken cancellationToken)
+    {
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        // Application katmanındaki RefreshTokenCommand'ı oluşturuyoruz
+        var command = new RefreshTokenCommand(
+            request.UserId,
+            request.RefreshToken,
+            clientIp
+        );
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsSuccess)
+        {
+            return Ok(result.Value);
+        }
+        return Unauthorized(new { Message = result.Error?.Message });
     }
 }
