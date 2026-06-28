@@ -15,6 +15,7 @@ using System.Text;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using LinkShortener.Application.Services;
+using StackExchange.Redis;
 using LinkShortener.Infrastructure.BackgroundWorkers;
 using LinkShortener.Infrastructure.Resilience;
 using LinkShortener.Infrastructure.Services;
@@ -99,6 +100,10 @@ public static class DependencyInjection
             options.Configuration = configuration.GetConnectionString("Redis");
         });
 
+        // Redis bağlantısını IConnectionMultiplexer olarak da kaydediyoruz
+        services.AddSingleton<IConnectionMultiplexer>(sp =>
+            ConnectionMultiplexer.Connect(configuration.GetConnectionString("Redis")));
+
         services.AddResilienceStrategy();
         services.AddCustomDistributedRateLimiter();
 
@@ -109,6 +114,8 @@ public static class DependencyInjection
         services.AddScoped<IPasswordHasher, BCryptPasswordHasher>();
 
         services.AddScoped<IRefreshTokenService, DynamoDbRefreshTokenService>();
+
+        services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 
         return services;
     }
@@ -235,7 +242,11 @@ public static class DynamoDbInitializer
                 KeySchema = new List<KeySchemaElement>
                 {
                     new() { AttributeName = "UserId", KeyType = KeyType.HASH }, // Partition Key
-                    new() { AttributeName = "Token", KeyType = KeyType.RANGE }  // Sort Key
+                    new() { AttributeName = "Token", KeyType = KeyType.RANGE } // Sort Key
+                },
+                ProvisionedThroughput = new ProvisionedThroughput
+                {
+                    ReadCapacityUnits = 5, WriteCapacityUnits = 5
                 }
             };
 

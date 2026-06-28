@@ -2,6 +2,7 @@
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
+using Polly.Timeout;
 
 namespace LinkShortener.Infrastructure.Resilience;
 
@@ -9,16 +10,15 @@ internal static class ResilienceSetup
 {
     public static IServiceCollection AddResilienceStrategy(this IServiceCollection services)
     {
-        var redisResiliencePipeline = new ResiliencePipelineBuilder()
+        var defaultResiliencePipeline = new ResiliencePipelineBuilder()
             // 1. KATMAN: TIMEOUT (Zaman Aşımı Koruması)
-            // Komut 300 ms içinde dönmezsa Polly işlemi zorla iptal eder (Hata fırlatır)
-            .AddTimeout(TimeSpan.FromMilliseconds(300))
+            // Komut 2000 ms içinde dönmezsa Polly işlemi zorla iptal eder (Hata fırlatır)
+            .AddTimeout(TimeSpan.FromMilliseconds(500))
 
             // 1. STRATEJİ: Genel Yeniden Deneme (Retry)
             .AddRetry(new RetryStrategyOptions
-            {
-                // Sadece Redis değil, tüm geçici I/O ve Network hatalarında devreye gir:
-                ShouldHandle = new PredicateBuilder().Handle<Exception>(), 
+            {                
+                ShouldHandle = new PredicateBuilder().Handle<TimeoutRejectedException>().Handle<Exception>(), 
                 MaxRetryAttempts = 3,
                 Delay = TimeSpan.FromMilliseconds(200),
                 BackoffType = DelayBackoffType.Exponential // 200ms, 400ms, 800ms olarak esne
@@ -52,7 +52,7 @@ internal static class ResilienceSetup
                 }
             }).Build();
 
-        services.AddSingleton(redisResiliencePipeline);
+        services.AddSingleton(defaultResiliencePipeline);
 
         return services;
     }

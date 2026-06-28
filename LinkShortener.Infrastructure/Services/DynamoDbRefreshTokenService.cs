@@ -1,59 +1,80 @@
 using Amazon.DynamoDBv2;
-using Amazon.DynamoDBv2.DocumentModel;
+using Amazon.DynamoDBv2.Model;
 using LinkShortener.Application.Interfaces;
 using LinkShortener.Domain.Entities;
 
 namespace LinkShortener.Infrastructure.Services;
 
-internal sealed class DynamoDbRefreshTokenService : IRefreshTokenService
+internal sealed class DynamoDbRefreshTokenService(IAmazonDynamoDB dynamoDbClient) : IRefreshTokenService
 {
-    private readonly Table _tokenTable;
-
-    public DynamoDbRefreshTokenService(IAmazonDynamoDB dynamoDbClient)
-    {
-        // Projenin genel yaklaşımına uygun olarak tabloyu doğrudan low-level istemci üzerinden yüklüyoruz.
-        // Bu yapı şemaya ihtiyaç duymaz, sadece verdiğimiz PK ve SK isimleriyle eşleşir.
-        _tokenTable = new TableBuilder(dynamoDbClient, "UserRefreshTokens")
-            .Build();
-    }
+    private readonly IAmazonDynamoDB _dynamoDbClient = dynamoDbClient;
+    private const string TableName = "UserRefreshTokens"; // Tablo adı sabit olarak tanımlandı
 
     // ✍️ 1. KAYDETME: Sıfır mapping, tamamen dinamik Document ataması
     public async Task SaveRefreshTokenAsync(UserRefreshToken refreshToken, CancellationToken cancellationToken)
-    {
-        var doc = new Document
+    {        
+        
+        var request = new PutItemRequest
         {
-            ["UserId"] = refreshToken.UserId, // Veritabanındaki HashKey ile tam eşleşme
-            ["Token"] = refreshToken.Token,   // Veritabanındaki RangeKey ile tam eşleşme
-            ["CreatedByIp"] = refreshToken.CreatedByIp,
-            ["CreatedAt"] = refreshToken.CreatedAt.ToString("o"), // ISO 8601 formatı
-            ["ExpiresAt"] = refreshToken.ExpiresAt.ToString("o"),
-            ["ExpiresAtTimestamp"] = refreshToken.ExpiresAtTimestamp // TTL sütunumuz
+            TableName = TableName,
+            Item = MapToAttributes(refreshToken)
         };
 
         if (refreshToken.RevokedAt.HasValue)
         {
-            doc["RevokedAt"] = refreshToken.RevokedAt.Value.ToString("o");
+            request.Item["RevokedAt"] = new AttributeValue { S = refreshToken.RevokedAt.Value.ToString("o") };
         }
 
-        await _tokenTable.PutItemAsync(doc, cancellationToken);
+        await _dynamoDbClient.PutItemAsync(request, cancellationToken);
+    }
+
+    private static Dictionary<string, AttributeValue> MapToAttributes(UserRefreshToken refreshToken)
+    {
+        return new Dictionary<string, AttributeValue>
+        {
+            { "UserId", new AttributeValue { S = refreshToken.UserId } },
+            { "Token", new AttributeValue { S = refreshToken.Token } },
+            { "CreatedByIp", new AttributeValue { S = refreshToken.CreatedByIp } },
+            { "CreatedAt", new AttributeValue { S = refreshToken.CreatedAt.ToString("O") } }, // ISO 8601 formatı
+            { "ExpiresAt", new AttributeValue { S = refreshToken.ExpiresAt.ToString("o") } },
+            { "ExpiresAtTimestamp", new AttributeValue { N = refreshToken.ExpiresAtTimestamp.ToString() } }
+        };
     }
 
     // 🔍 2. TEKİL OKUMA: Nokta atışı Point-Read
     public async Task<UserRefreshToken?> GetTokenAsync(string userId, string token, CancellationToken cancellationToken)
     {
-        // PK ve SK değerlerini vererek doğrudan dökümanı çekiyoruz
-        Document doc = await _tokenTable.GetItemAsync(userId, token, cancellationToken);
+        var request = new GetItemRequest
+        {
+            TableName = TableName,
+            Key = new Dictionary<string, AttributeValue>
+            {
+                { "UserId", new AttributeValue { S = userId } },
+                { "Token", new AttributeValue { S = token } }
+            }
+        };
         
-        if (doc == null) return null;
+        var response = await _dynamoDbClient.GetItemAsync(request, cancellationToken);
+        if (!response.IsItemSet || response.Item.Count == 0) return null;
 
+        return MapFromAttributes(response.Item);
+    }
+
+    private static UserRefreshToken MapFromAttributes(Dictionary<string, AttributeValue> attributes)
+    {
         return new UserRefreshToken
         {
-            UserId = doc["UserId"].AsString(),
-            Token = doc["Token"].AsString(),
-            CreatedByIp = doc["CreatedByIp"].AsString(),
-            CreatedAt = DateTime.Parse(doc["CreatedAt"].AsString()),
-            ExpiresAt = DateTime.Parse(doc["ExpiresAt"].AsString()),
-            RevokedAt = doc.ContainsKey("RevokedAt") ? DateTime.Parse(doc["RevokedAt"].AsString()) : null
+            UserId = attributes["UserId"].S,
+            Token = attributes["Token"].S,
+            CreatedByIp = attributes["CreatedByIp"].S,
+            CreatedAt = DateTime.Parse(attributes["CreatedAt"].S),
+            ExpiresAt = DateTime.Parse(attributes["ExpiresAt"].S),
+            RevokedAt = attributes.TryGetValue("RevokedAt", out var revokedAttr) && revokedAttr.S != null
+                ? DateTime.Parse(revokedAttr.S)
+                : null,
+            RevokedByIp = attributes.TryGetValue("RevokedByIp", out var revokedIpAttr) && revokedIpAttr.S != null
+                ? revokedIpAttr.S
+                : null
         };
     }
 
@@ -67,31 +88,53 @@ internal sealed class DynamoDbRefreshTokenService : IRefreshTokenService
     // 💣 4. TÜM OTURUMLARI PATLATMA (Batch Write - Cost Optimization)
     public async Task RevokeAllUserSessionsAsync(string userId, CancellationToken cancellationToken)
     {
-        // Kullanıcıya ait tüm token'ları Partition Key (UserId) üzerinden Query filtresiyle buluyoruz
-        var queryFilter = new QueryFilter("UserId", QueryOperator.Equal, userId);
-        var search = _tokenTable.Query(queryFilter);
-        
-        List<Document> documents = await search.GetRemainingAsync(cancellationToken);
-
-        if (documents.Count == 0) return;
-
-        // AWS SDK Document modelinin toplu silme (Batch) motorunu tetikliyoruz
-        var batchWrite = _tokenTable.CreateBatchWrite();
-
-        foreach (var doc in documents)
+        // Kullanıcıya ait tüm token'ları Partition Key (UserId) üzerinden Query ile buluyoruz
+        var queryRequest = new QueryRequest
         {
-            // Eğer token'ın revizyon zamanı yoksa ve süresi dolmadıysa silme kuyruğuna ekle
-            bool isRevoked = doc.ContainsKey("RevokedAt");
-            DateTime expiresAt = DateTime.Parse(doc["ExpiresAt"].AsString());
-            
-            if (!isRevoked && DateTime.UtcNow < expiresAt)
+            TableName = TableName,
+            KeyConditionExpression = "UserId = :v_userId",
+            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
             {
-                // Sadece PK ve SK vererek batch'e ekliyoruz
-                batchWrite.AddKeyToDelete(doc["UserId"].AsPrimitive(), doc["Token"].AsPrimitive());
+                { ":v_userId", new AttributeValue { S = userId } }
+            },
+            ProjectionExpression = "UserId, Token, RevokedAt, ExpiresAt" // Sadece gerekli alanları çekiyoruz
+        };
+
+        var queryResponse = await _dynamoDbClient.QueryAsync(queryRequest, cancellationToken);
+
+        if (queryResponse.Items.Count == 0) return;
+
+        var writeRequests = new List<WriteRequest>();
+
+        foreach (var item in queryResponse.Items)
+        {
+            // Eğer token'ın revizyon zamanı yoksa ve süresi dolmadıysa silme isteği ekle
+            bool isRevoked = item.ContainsKey("RevokedAt") && item["RevokedAt"].S != null;
+            DateTime expiresAt = DateTime.Parse(item["ExpiresAt"].S);
+            
+            if (!isRevoked && DateTime.UtcNow < expiresAt) // Sadece aktif ve süresi dolmamış token'ları iptal et
+            {
+                writeRequests.Add(new WriteRequest
+                {
+                    DeleteRequest = new DeleteRequest
+                    {
+                        Key = new Dictionary<string, AttributeValue>
+                        {
+                            { "UserId", item["UserId"] },
+                            { "Token", item["Token"] }
+                        }
+                    }
+                });
             }
         }
 
-        // Tek bir network çağrısıyla kullanıcının tüm cihazlardaki oturumlarını uçuruyoruz
-        await batchWrite.ExecuteAsync(cancellationToken);
+        if (writeRequests.Any())
+        {
+            var batchWriteRequest = new BatchWriteItemRequest
+            {
+                RequestItems = new Dictionary<string, List<WriteRequest>> { { TableName, writeRequests } }
+            };
+            await _dynamoDbClient.BatchWriteItemAsync(batchWriteRequest, cancellationToken);
+        }
     }
 }

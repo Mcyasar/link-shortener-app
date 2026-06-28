@@ -6,7 +6,7 @@ using LinkShortener.Application.Common.Results;
 
 namespace LinkShortener.Application.Features.Users.Commands.RefreshToken;
 
-public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCommand, Result<LoginResponseDto>>
+public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCommand, Result<LoginCommandResponseDto>>
 {
     private readonly IRefreshTokenService _refreshTokenService;
     private readonly IUserRepository _userRepository;
@@ -22,7 +22,7 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
         _jwtTokenGenerator = jwtTokenGenerator;
     }
 
-    public async Task<Result<LoginResponseDto>> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
+    public async Task<Result<LoginCommandResponseDto>> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
     {
         // 1. Refresh Token'ı veritabanından getir
         // DynamoDbRefreshTokenService'deki GetTokenAsync metodu hem UserId hem de Token gerektirdiğinden,
@@ -30,20 +30,20 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
         // access token'dan veya refresh token'ın kendisinden (eğer JWT ise) alınır.
         var existingRefreshToken = await _refreshTokenService.GetTokenAsync(request.UserId.ToString(), request.RefreshToken, cancellationToken);
         if (existingRefreshToken is null)
-            return Result<LoginResponseDto>.Failure(Error.Unauthorized("Geçersiz refresh token."));
+            return Result<LoginCommandResponseDto>.Failure(Error.Unauthorized("Geçersiz refresh token."));
 
         // 2. Refresh Token'ı doğrula
         if (existingRefreshToken.IsRevoked)
-            return Result<LoginResponseDto>.Failure(Error.Unauthorized("Refresh token iptal edilmiş."));
+            return Result<LoginCommandResponseDto>.Failure(Error.Unauthorized("Refresh token iptal edilmiş."));
 
         // Use IsExpired property from UserRefreshToken entity
         if (existingRefreshToken.IsExpired)
-            return Result<LoginResponseDto>.Failure(Error.Unauthorized("Refresh token süresi dolmuş."));
+            return Result<LoginCommandResponseDto>.Failure(Error.Unauthorized("Refresh token süresi dolmuş."));
 
         // 3. Kullanıcıyı getir
         var user = await _userRepository.GetByIdAsync(request.UserId, cancellationToken);
         if (user is null)
-            return Result<LoginResponseDto>.Failure(Error.NotFound("Kullanıcı bulunamadı."));
+            return Result<LoginCommandResponseDto>.Failure(Error.NotFound("Kullanıcı bulunamadı."));
 
         // 4. Eski refresh token'ı iptal et (Rotation)
         existingRefreshToken.Revoke(request.ClientIpAddress);
@@ -62,6 +62,6 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
         };
         await _refreshTokenService.SaveRefreshTokenAsync(newRefreshToken, cancellationToken);
 
-        return Result<LoginResponseDto>.Success(new LoginResponseDto(user.Id, user.Email, newAccessToken, newRefreshToken.Token));
+        return Result<LoginCommandResponseDto>.Success(new LoginCommandResponseDto(user.Id, user.Email, newAccessToken, newRefreshToken.Token));
     }
 }

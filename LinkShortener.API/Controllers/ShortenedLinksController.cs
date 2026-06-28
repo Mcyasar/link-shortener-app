@@ -2,6 +2,7 @@
 using LinkShortener.Application.Features.ShortenedLinks.Events;
 using LinkShortener.Application.Features.ShortenedLinks.Queries.GetOriginalLink;
 using LinkShortener.Application.Interfaces;
+using LinkShortener.Application.Features.ShortenedLinks.Queries.GetUserLinks;
 using LinkShortener.Infrastructure.Resilience;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -89,6 +90,31 @@ public sealed class ShortenedLinksController : ControllerBase
         {
             return NotFound(new { Message = "Aradığınız kısa kod sistemde mevcut değil." });
         }
+    }
+
+    /// <summary>
+    /// Giriş yapmış kullanıcının oluşturduğu tüm kısa linkleri listeler.
+    /// </summary>
+    [HttpGet("shortenedLinks")]
+    [ProducesResponseType(typeof(List<ShortenedLinkDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [CustomRateLimit(permitLimit: 10, windowInSeconds: 1)]
+    public async Task<IActionResult> GetUserLinks(CancellationToken cancellationToken)
+    {
+        // JWT içinden giriş yapan kullanıcının ID'sini (UUID v7) güvenle okuyoruz
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(userIdClaim) || !Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new { Message = "Geçersiz veya eksik kullanıcı kimliği." });
+        }
+
+        // Application katmanındaki Query nesnemizi besliyoruz
+        var query = new GetUserLinksQuery(userId);
+
+        var userLinks = await _mediator.Send(query, cancellationToken);
+
+        return Ok(userLinks);
     }
 }
 

@@ -1,33 +1,40 @@
 ﻿using MediatR;
 using LinkShortener.Application.Interfaces;
 using LinkShortener.Domain.Entities;
+using Microsoft.Extensions.Logging; 
 
 namespace LinkShortener.Application.Features.Users.Queries.LoginUser;
 
-public sealed class LoginUserQueryHandler : IRequestHandler<LoginUserQuery, LoginResponseDto>
+public sealed class LoginUserQueryHandler : IRequestHandler<LoginUserCommandQuery, LoginCommandResponseDto>
 {
     private readonly IUserRepository _userRepository; // Bağımlılık artık soyut
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IRefreshTokenService _refreshTokenService;
+    private readonly ILogger<LoginUserQueryHandler> _logger; 
 
     public LoginUserQueryHandler(
         IUserRepository userRepository,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator,
-        IRefreshTokenService refreshTokenService)
+        IRefreshTokenService refreshTokenService,
+        ILogger<LoginUserQueryHandler> logger)
     {
         _userRepository = userRepository;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
         _refreshTokenService = refreshTokenService;
+        _logger = logger;
     }
 
-    public async Task<LoginResponseDto> Handle(LoginUserQuery request, CancellationToken cancellationToken)
+    public async Task<LoginCommandResponseDto> Handle(LoginUserCommandQuery request, CancellationToken cancellationToken)
     {
         ///TODO: result pattern ile hata yönetimi yapılabilir. Şu an UnauthorizedAccessException fırlatılıyor.
         
         var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
+
+       _logger.LogInformation("LoginUserQueryHandler received request for email: {Email}", request.Email);
+
         if (user is null)
             throw new UnauthorizedAccessException("Geçersiz e-posta veya şifre.");
 
@@ -48,6 +55,6 @@ public sealed class LoginUserQueryHandler : IRequestHandler<LoginUserQuery, Logi
         };
         await _refreshTokenService.SaveRefreshTokenAsync(refreshToken, cancellationToken);
 
-        return new LoginResponseDto(user.Id, user.Email, token, refreshToken.Token);
+        return new LoginCommandResponseDto(user.Id, user.Email, token, refreshToken.Token);
     }
 }

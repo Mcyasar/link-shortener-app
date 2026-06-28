@@ -72,6 +72,35 @@ public sealed class DynamoDbShortenedLinkRepository : IShortenedLinkRepository
         await _dynamoDb.UpdateItemAsync(request, cancellationToken);
     }
 
+    public async Task<List<ShortenedLink>> GetLinksByUserIdAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var queryRequest = new QueryRequest
+        {
+            TableName = TableName,
+            IndexName = "UserLinksIndex", // Kullanıcıya özel GSI'ımızı kullanıyoruz
+            KeyConditionExpression = "UserId = :v_userId",
+            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+            {
+                { ":v_userId", new AttributeValue { S = userId.ToString() } }
+            },
+            ScanIndexForward = false, // En yeni linkleri önce getir (CreatedAt Sort Key olduğu için)
+            ProjectionExpression = "Id, ShortCode, OriginalUrl, ClickCount, CreatedAt, ExpiresAt, UserId" // Sadece gerekli alanları çekiyoruz
+        };
+
+        var response = await _dynamoDb.QueryAsync(queryRequest, cancellationToken);
+
+        var links = new List<ShortenedLink>();
+        foreach (var item in response.Items)
+        {
+            // MapFromAttributes metodu zaten Dictionary<string, AttributeValue> alıyor
+            links.Add(MapFromAttributes(item));
+        }
+
+        return links;
+    }
+
+
+
     // --- DDD Entity <-> DynamoDB Mapping Mantığı ---
     private static Dictionary<string, AttributeValue> MapToAttributes(ShortenedLink link)
     {
