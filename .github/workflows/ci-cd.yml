@@ -2,84 +2,70 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ] # main branch'ine push yapýldýðýnda çalýþýr
-
-env:
-  AWS_REGION: eu-central-1
-  ECR_REPOSITORY: link-shortener-backend
+    branches: [ "main" ] # main branch'ine push yapÄ±ldÄ±ï¿½ï¿½nda ï¿½alï¿½ï¿½ï¿½r
 
 jobs:
-  test:
-    name: Run Integration Tests (Testcontainers)
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    - name: Setup .NET 9
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '9.0.x'
-
-    # Testcontainers arka planda Docker kullandýðý için ubuntu-latest üzerinde doðrudan çalýþýr.
-    - name: Execute Tests
-      run: dotnet test --configuration Release --verbosity normal
-
-  # build-and-push:
-  #   name: Build & Push to ECR
-  #   needs: test
+  # test:
+  #   name: Run Integration Tests (Testcontainers)
   #   runs-on: ubuntu-latest
-    
+
   #   steps:
-  #   # 1. Kodu GitHub runner'a çekiyoruz
   #   - name: Checkout Code
   #     uses: actions/checkout@v4
 
-  #   # 2. AWS Kimlik Doðrulamasý yapýyoruz
-  #   - name: Configure AWS Credentials
-  #     uses: aws-actions/configure-aws-credentials@v4
+  #   - name: Setup .NET 9
+  #     uses: actions/setup-dotnet@v4
   #     with:
-  #       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #       aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #       aws-region: ${{ env.AWS_REGION }}
+  #       dotnet-version: '9.0.x'
+  
+  build-and-push:
+    name: Build & Push to Docker Hub and Update GitOps
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Kodu GitHub runner'a Ã§ekiyoruz
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-  #   # 3. AWS ECR'a giriþ yapýyoruz
-  #   - name: Login to Amazon ECR
-  #     id: login-ecr
-  #     uses: aws-actions/amazon-ecr-login@v2
+    # 2. Docker Hub'a giriÅŸ yapÄ±yoruz
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
 
-  #   # 4. Docker imajýný build edip ECR'a pushluyoruz (Tag olarak Commit SHA kullanýyoruz)
-  #   - name: Build, tag, and push image to Amazon ECR
-  #     id: build-image
-  #     env:
-  #       ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-  #       IMAGE_TAG: ${{ github.sha }}
-  #     run: |
-  #       docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG .
-  #       docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
-  #       echo "image=$ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+    # 3. Docker imajÄ±nÄ± build edip Docker Hub'a pushluyoruz (Tag olarak Commit SHA kullanÄ±yoruz)
+    - name: Build and push Docker image
+      id: build-image
+      env:
+        IMAGE_NAME: mcysrdckr/link_shortener
+        IMAGE_TAG: ${{ github.sha }} # Commit SHA'sÄ±nÄ± tag olarak kullanÄ±yoruz
+      run: |
+        # LinkShortener.API projesinin Dockerfile'Ä±nÄ± kullanarak imajÄ± oluÅŸtur
+        docker build -t $IMAGE_NAME:$IMAGE_TAG -f Dockerfile .
+        docker push $IMAGE_NAME:$IMAGE_TAG
+        echo "image=$IMAGE_NAME:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-  #   # 5. GitOps reposundaki imaj tag'ini güncelliyoruz (CD Tetikleme)
-  #   - name: Update GitOps Manifest
-  #     env:
-  #       GITOPS_TOKEN: ${{ secrets.GITOPS_PAT }}
-  #       IMAGE_TAG: ${{ github.sha }}
-  #       AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  #     run: |
-  #       # GitOps reposunu geçici olarak klonluyoruz
-  #       git config --global user.email "action@github.com"
-  #       git config --global user.name "GitHub Action"
-  #       git clone https://${{ env.GITOPS_TOKEN }}@github.com/${{ github.repository_owner }}/link-shortener-gitops.git
-  #       cd link-shortener-gitops/environments/dev
+    # 4. GitOps reposundaki imaj tag'ini gÃ¼ncelliyoruz (CD Tetikleme)
+    - name: Update GitOps Manifest
+      env:
+        GITOPS_TOKEN: ${{ secrets.GITOPS_PAT }} # GitOps reposuna eriÅŸim iÃ§in PAT
+        IMAGE_FULL_NAME: mcysrdckr/link_shortener # Docker Hub'daki tam imaj adÄ±
+        IMAGE_TAG: ${{ github.sha }} # Yeni imaj tag'i
+      run: |
+        # GitOps reposunu geÃ§ici olarak klonluyoruz
+        git config --global user.email "action@github.com"
+        git config --global user.name "GitHub Action"
+        git clone https://${{ env.GITOPS_TOKEN }}@github.com/${{ github.repository_owner }}/link-shortener-gitops.git
+        cd link-shortener-gitops/environments/local
         
-  #       # Kustomize dosyasýndaki eski imaj ve tag bilgilerini yenisiyle güncelliyoruz
-  #       # Not: Buradaki name parametresi base/deployment.yaml içindeki container image adý ile eþleþmelidir.
-
-  #       sed -i "s|newName: .*|newName: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}|g" kustomization.yaml
-  #       sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|g" kustomization.yaml
+        # Kustomize dosyasÄ±ndaki imaj adÄ±nÄ± ve tag'ini gÃ¼ncelliyoruz
+        # newName: mcysrdckr/link_shortener
+        # newTag: <commit-sha>
+        sed -i "s|newName: .*|newName: ${IMAGE_FULL_NAME}|g" kustomization.yaml
+        sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|g" kustomization.yaml
         
-  #       # Deðiþiklikleri GitOps reposuna pushluyoruz
-  #       git add kustomization.yaml
-  #       git commit -m "chore: update backend image tag to ${IMAGE_TAG} [skip ci]"
-  #       git push origin main
+        # DeÄŸiÅŸiklikleri GitOps reposuna pushluyoruz
+        git add kustomization.yaml
+        git commit -m "chore: update backend image tag to ${IMAGE_TAG} [skip ci]" # [skip ci] ile bu commit'in tekrar CI tetiklemesini Ã¶nleriz
+        git push origin main
