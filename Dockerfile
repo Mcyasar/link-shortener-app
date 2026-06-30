@@ -5,22 +5,22 @@ EXPOSE 8080
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Proje dosyalarýný (.csproj) cache mekanizmasýndan yararlanmak için kopyalýyoruz
+# Proje dosyalarï¿½nï¿½ (.csproj) cache mekanizmasï¿½ndan yararlanmak iï¿½in kopyalï¿½yoruz
 COPY ["LinkShortener.API/LinkShortener.API.csproj", "LinkShortener.API/"]
 COPY ["LinkShortener.Application/LinkShortener.Application.csproj", "LinkShortener.Application/"]
 COPY ["LinkShortener.Domain/LinkShortener.Domain.csproj", "LinkShortener.Domain/"]
 COPY ["LinkShortener.Infrastructure/LinkShortener.Infrastructure.csproj", "LinkShortener.Infrastructure/"]
 
-# Restore iþlemini tetikliyoruz
+# Restore iï¿½lemini tetikliyoruz
 RUN dotnet restore "LinkShortener.API/LinkShortener.API.csproj"
 
-# Kalan tüm kaynak kodlarý kopyalýyoruz
+# Kalan tï¿½m kaynak kodlarï¿½ kopyalï¿½yoruz
 COPY . .
 WORKDIR "/src/LinkShortener.API"
-RUN dotnet build "LinkShortener.API.csproj" -c Release -o /app/build
+RUN dotnet build "LinkShortener.API.csproj" -c Debug -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "LinkShortener.API.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "LinkShortener.API.csproj" -c Debug -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app

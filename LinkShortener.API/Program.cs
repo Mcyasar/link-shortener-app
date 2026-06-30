@@ -92,7 +92,7 @@ var app = builder.Build();
 
 app.UseRouting();
 
-#if DEBUG
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -105,7 +105,7 @@ if (app.Environment.IsDevelopment())
     await app.EnsureShortenedLinksTableCreatedAsync();
     await app.EnsureUserRefreshTokensTableCreatedAsync();
 }
-#endif
+
 
 app.UseCors("AllowSpecificOrigin"); // CORS middleware'ini UseAuthentication'dan önce ekliyoruz
 
@@ -114,12 +114,12 @@ app.UseAuthorization();
 
 app.UseRateLimiter();
 
-#if RELEASE
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
-#endif
+
 
 // --- API ENDPOINTS (Minimal APIs) ---
 
