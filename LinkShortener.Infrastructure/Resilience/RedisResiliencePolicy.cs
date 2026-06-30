@@ -20,11 +20,7 @@ internal static class ResilienceSetup
                 BackoffType = DelayBackoffType.Exponential // 200ms, 400ms, 800ms olarak esne
             })
 
-            // 2. KATMAN: TIMEOUT (Zaman Aşımı Koruması)
-            // Komut 2000 ms içinde dönmezsa Polly işlemi zorla iptal eder (Hata fırlatır)
-            .AddTimeout(TimeSpan.FromMilliseconds(500))
-
-            // 3. KATMAN: CIRCUIT BREAKER (Devre Kesici)
+            // 2. KATMAN: CIRCUIT BREAKER (Devre Kesici)
             .AddCircuitBreaker(new CircuitBreakerStrategyOptions
             {
                 FailureRatio = 0.5, // İsteklerin %50'si hata verirse devreyi aç
@@ -50,7 +46,13 @@ internal static class ResilienceSetup
                     Console.WriteLine($"⏳ [CIRCUIT HALF-OPEN] Deneme istekleri gönderiliyor, Redis test ediliyor...");
                     return ValueTask.CompletedTask;
                 }
-            }).Build();
+            })
+
+            // 3. KATMAN: TIMEOUT (Zaman Aşımı Koruması)
+            // Komut 2000 ms içinde dönmezsa Polly işlemi zorla iptal eder (Hata fırlatır)
+            .AddTimeout(TimeSpan.FromMilliseconds(500))
+            
+            .Build();
 
         services.AddSingleton(defaultResiliencePipeline);
 
