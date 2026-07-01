@@ -99,7 +99,13 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference(options =>
     {
         options.WithTitle("Link Shortener API")
-               .WithOpenApiRoutePattern("/openapi/v1.json"); // �eman�n �ekilece�i tam adres
+               .WithOpenApiRoutePattern("/openapi/v1.json");
+
+        // 🚀 Derleme hatasını çözen kurumsal yaklaşım:
+        options.Servers =
+        [
+            new("http://linkshortener.local", "Lokal Kubernetes Girişi")
+        ];
     });
 
     await app.EnsureShortenedLinksTableCreatedAsync();
