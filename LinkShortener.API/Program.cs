@@ -21,14 +21,14 @@ builder.Services.AddControllers();
 
 builder.Services.AddLogging();
 
-// builder.Services.AddCors(options =>
-// {
-//     options.AddPolicy("AllowSpecificOrigin",
-//         builder => builder.WithOrigins("http://localhost:3000") // React/Vue/Angular uygulamanızın çalıştığı adres
-//                           .AllowAnyHeader()
-//                           .AllowAnyMethod()
-//                           .AllowCredentials()); // HTTP-only çerezler için gerekli
-// });
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowSpecificOrigin",
+        builder => builder.WithOrigins("http://localhost:3000") // React/Vue/Angular uygulamanızın çalıştığı adres
+                          .AllowAnyHeader()
+                          .AllowAnyMethod()
+                          .AllowCredentials()); // HTTP-only çerezler için gerekli
+});
 
 // 2. G�venlik: Rate Limiting (H�z S�n�r�) Ayarlar�
 // API'mizin saniyede binlerce istek atan botlar taraf�ndan ��kertilmesini engelliyoruz
@@ -113,7 +113,7 @@ if (app.Environment.IsDevelopment())
 }
 
 
-// app.UseCors("AllowSpecificOrigin"); // CORS middleware'ini UseAuthentication'dan önce ekliyoruz
+app.UseCors("AllowSpecificOrigin"); // CORS middleware'ini UseAuthentication'dan önce ekliyoruz
 
 app.UseAuthentication();
 app.UseAuthorization();

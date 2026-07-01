@@ -18,13 +18,9 @@ internal static class ResilienceSetup
                 MaxRetryAttempts = 3,
                 Delay = TimeSpan.FromMilliseconds(200),
                 BackoffType = DelayBackoffType.Exponential // 200ms, 400ms, 800ms olarak esne
-            })
+            })            
 
-            // 2. KATMAN: TIMEOUT (Zaman Aşımı Koruması)
-            // Komut 2000 ms içinde dönmezsa Polly işlemi zorla iptal eder (Hata fırlatır)
-            .AddTimeout(TimeSpan.FromMilliseconds(500))
-
-            // 3. KATMAN: CIRCUIT BREAKER (Devre Kesici)
+            // 2. KATMAN: CIRCUIT BREAKER (Devre Kesici)
             .AddCircuitBreaker(new CircuitBreakerStrategyOptions
             {
                 FailureRatio = 0.5, // İsteklerin %50'si hata verirse devreyi aç
@@ -51,6 +47,10 @@ internal static class ResilienceSetup
                     return ValueTask.CompletedTask;
                 }
             })
+
+            // 3. KATMAN: TIMEOUT (Zaman Aşımı Koruması)
+            // Komut 2000 ms içinde dönmezsa Polly işlemi zorla iptal eder (Hata fırlatır)
+            .AddTimeout(TimeSpan.FromSeconds(5))
 
             .Build();
 

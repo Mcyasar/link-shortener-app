@@ -21,12 +21,14 @@ public sealed class AuthController : ControllerBase
     private readonly IMediator _mediator;
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(IMediator mediator, IConfiguration configuration, IHostEnvironment environment)
+    public AuthController(IMediator mediator, IConfiguration configuration, IHostEnvironment environment, ILogger<AuthController> logger)
     {
         _mediator = mediator;
         _configuration = configuration;
         _environment = environment;
+        _logger = logger;
     }
 
     /// <summary>
@@ -63,6 +65,8 @@ public sealed class AuthController : ControllerBase
     [CustomRateLimit(permitLimit: 100, windowInSeconds: 1)]
     public async Task<IActionResult> Login([FromBody] LoginUserQuery query, CancellationToken cancellationToken)
     {
+        _logger.LogInformation("Auth controller login request received for email: {Email}", query.Email);
+
         // Kullanıcının IP adresini alıyoruz
         var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         try
@@ -82,10 +86,15 @@ public sealed class AuthController : ControllerBase
 
             // Access token'ı ve diğer bilgileri response body'de dön
             var loginResponseDto = new LoginResponseDto(loginResponse.UserId, loginResponse.Email, loginResponse.Token); // RefreshToken'ı body'den kaldırıyoruz
+
+            _logger.LogInformation("Auth controller login request successfull for email: {Email}", query.Email);
+
             return Ok(loginResponseDto);
         }
         catch (UnauthorizedAccessException ex)
         {
+            _logger.LogInformation("Auth controller login request exception for email: {Email}", query.Email);
+
             // Geçersiz e-posta veya şifre hatalarında 401 Unauthorized fırlatıyoruz
             return Unauthorized(new { Message = ex.Message });
         }
