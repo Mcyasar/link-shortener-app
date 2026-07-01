@@ -25,7 +25,7 @@ internal static class ResilienceSetup
             {
                 FailureRatio = 0.5, // İsteklerin %50'si hata verirse devreyi aç
                 SamplingDuration = TimeSpan.FromSeconds(10), // Son 10 saniyeyi analiz et
-                MinimumThroughput = 8, // En az 8 istek geldikten sonra analize baş (Dev ortamı için ideal)
+                MinimumThroughput = 20, // En az 20 istek geldikten sonra analize baş (Dev ortamı için ideal)
                 BreakDuration = TimeSpan.FromSeconds(15), // Devre açılırsa 15 saniye boyunca tüm işlemleri iptal et
 
                 // Tüm exception'lar için devreyi aç
