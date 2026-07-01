@@ -118,7 +118,7 @@ app.UseCors("AllowSpecificOrigin"); // CORS middleware'ini UseAuthentication'dan
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseRateLimiter();
+//app.UseRateLimiter();
 
 
 if (!app.Environment.IsDevelopment())
