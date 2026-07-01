@@ -101,10 +101,10 @@ public static class DependencyInjection
         });
 
         // Redis bağlantısını IConnectionMultiplexer olarak da kaydediyoruz
-        // services.AddSingleton<IConnectionMultiplexer>(sp =>
-        //     ConnectionMultiplexer.Connect(configuration.GetConnectionString("Redis")));
+        services.AddSingleton<IConnectionMultiplexer>(sp =>
+            ConnectionMultiplexer.Connect(configuration.GetConnectionString("Redis")));
 
-        services.AddResilienceStrategy();
+        // services.AddResilienceStrategy();
         services.AddCustomDistributedRateLimiter();
 
         // Bizim Application katmanına sunduğumuz önbellek arayüzünün (kontratının) eşlenmesi
