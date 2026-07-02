@@ -11,32 +11,32 @@ namespace LinkShortener.Infrastructure.Caching;
 public sealed class RedisCacheService : ICacheService
 {
     private readonly IDistributedCache _cache;
-    //private readonly ResiliencePipeline _resiliencePipeline;
+    private readonly ResiliencePipeline _resiliencePipeline;
 
-    public RedisCacheService(IDistributedCache cache/*, ResiliencePipeline resiliencePipeline*/)
+    public RedisCacheService(IDistributedCache cache, ResiliencePipeline resiliencePipeline)
     {
         _cache = cache;
-        //_resiliencePipeline = resiliencePipeline;
+        _resiliencePipeline = resiliencePipeline;
     }
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken)
     {
         try
         {
-            var cachedData = await _cache.GetStringAsync(key, cancellationToken);
-            if (string.IsNullOrEmpty(cachedData)) return default;
+            // var cachedData = await _cache.GetStringAsync(key, cancellationToken);
+            // if (string.IsNullOrEmpty(cachedData)) return default;
+            // return JsonSerializer.Deserialize<T>(cachedData);
 
-            return JsonSerializer.Deserialize<T>(cachedData);
-
+            
 
             // Redis operasyonunu kalkanın koruması altında çalıştır
-            // return await _resiliencePipeline.ExecuteAsync(async token =>
-            // {
-            //     var cachedData = await _cache.GetStringAsync(key, cancellationToken);
-            //     if (string.IsNullOrEmpty(cachedData)) return default;
+            return await _resiliencePipeline.ExecuteAsync(async token =>
+            {
+                var cachedData = await _cache.GetStringAsync(key, cancellationToken);
+                if (string.IsNullOrEmpty(cachedData)) return default;
 
-            //     return JsonSerializer.Deserialize<T>(cachedData);
-            // }, cancellationToken);
+                return JsonSerializer.Deserialize<T>(cachedData);
+            }, cancellationToken);
         }
         catch (Exception ex) when (ex is BrokenCircuitException or TimeoutRejectedException or RedisException)
         {

@@ -57,7 +57,7 @@ jobs:
         git config --global user.email "action@github.com"
         git config --global user.name "GitHub Action"
         git clone https://${{ env.GITOPS_TOKEN }}@github.com/${{ github.repository_owner }}/link-shortener-gitops.git
-        cd link-shortener-gitops/environments/local
+        cd link-shortener-gitops/environments/local/app-resources
         
         # Kustomize dosyasındaki imaj adını ve tag'ini güncelliyoruz
         # newName: mcysrdckr/link_shortener

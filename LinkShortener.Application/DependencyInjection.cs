@@ -13,7 +13,7 @@ public static class DependencyInjection
             cfg.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly);
             
             // 🔥 v14 Kayıt Protokolü: open-generic tipi bu şekilde açıkça deklare ediyoruz
-            //cfg.AddOpenBehavior(typeof(ResilienceBehavior<,>));            
+            cfg.AddOpenBehavior(typeof(ResilienceBehavior<,>));            
         });        
 
         return services;

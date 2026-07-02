@@ -104,8 +104,8 @@ public static class DependencyInjection
         services.AddSingleton<IConnectionMultiplexer>(sp =>
             ConnectionMultiplexer.Connect(configuration.GetConnectionString("Redis")));
 
-        // services.AddResilienceStrategy();
-        // services.AddCustomDistributedRateLimiter();
+        services.AddResilienceStrategy();
+        services.AddCustomDistributedRateLimiter();
 
         // Bizim Application katmanına sunduğumuz önbellek arayüzünün (kontratının) eşlenmesi
         services.AddScoped<ICacheService, RedisCacheService>();
