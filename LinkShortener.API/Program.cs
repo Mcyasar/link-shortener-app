@@ -116,11 +116,13 @@ if (app.Environment.IsDevelopment())
         options.WithTitle("Link Shortener API")
                .WithOpenApiRoutePattern("/openapi/v1.json");
 
+        #if !DEBUG //when debugging we need actual localhost:5188 and we need to prevent this url assignment below
         // 🚀 Derleme hatasını çözen kurumsal yaklaşım:
-        // options.Servers =
-        // [
-        //     new("http://linkshortener.local", "Lokal Kubernetes Girişi")
-        // ];
+        options.Servers =
+        [
+            new("http://linkshortener.local", "Lokal Kubernetes Girişi")
+        ];
+        #endif
     });
 
     await app.EnsureShortenedLinksTableCreatedAsync();
@@ -136,7 +138,7 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 
-if (!app.Environment.IsDevelopment())
+if (app.Environment.IsProduction())
 {
     app.UseHttpsRedirection();
 }
