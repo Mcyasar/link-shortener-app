@@ -3,8 +3,16 @@ using LinkShortener.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.OpenApi.Models;
 using Scalar.AspNetCore;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using LinkShortener.API.Common;
+using LinkShortener.Application.Common.Configurations;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<TelemetrySettings>(builder.Configuration.GetSection("TelemetrySettings"));
+var telemetrySettings = builder.Configuration.GetSection("TelemetrySettings").Get<TelemetrySettings>();
+var serviceName = telemetrySettings?.ServiceName ?? StaticValues.ApiName;
 
 builder.Services.AddAuthentication(options =>
 {
@@ -12,7 +20,7 @@ builder.Services.AddAuthentication(options =>
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 });
 
-// 1. Katmanlar�n Ba��ml�l�k Enjeksiyonlar�n� (DI) Ba�l�yoruz
+// 1. Katmanların Bağımlılık Enjeksiyonlarını (DI) Bağlıyoruz
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddBackgroundWorkerServices();
@@ -20,6 +28,34 @@ builder.Services.AddBackgroundWorkerServices();
 builder.Services.AddControllers();
 
 builder.Services.AddLogging();
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService(serviceName, serviceVersion: StaticValues.ApiVersion))
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddSource(serviceName)
+            .AddAspNetCoreInstrumentation(options =>
+            {
+                // İsteğe bağlı: Sadece api rotalarını trace et, swagger/scalar isteklerini filtrele
+                options.Filter = (httpContext) => httpContext.Request.Path.StartsWithSegments("/api");
+            })
+            .AddHttpClientInstrumentation();
+            
+            // 🚀 LOKAL GELİŞTİRME KONFORU: 
+        // Eğer uygulama "Development" (Saf lokal) ortamındaysa Jaeger'a veri göndermeyi atla.
+        // Sadece "Kubernetes" veya "Staging/Production" ortamındaysa Exporter'ı bağla.
+        if (!builder.Environment.IsDevelopment())
+        {
+             tracing.AddOtlpExporter(options =>
+            {
+                // Kubernetes içindeki Jaeger servisimizin gRPC endpoint'ini gösteriyoruz
+                options.Endpoint = new Uri("http://jaeger-service:4317");
+                options.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.Grpc;
+            });
+        }
+           
+    });
 
 builder.Services.AddCors(options =>
 {
@@ -30,7 +66,7 @@ builder.Services.AddCors(options =>
                           .AllowCredentials()); // HTTP-only çerezler için gerekli
 });
 
-// Swagger/OpenAPI Deste�i (.NET 9.0 yerle�ik OpenAPI deste�i)
+// Swagger/OpenAPI Desteği (.NET 9.0 yerle�ik OpenAPI deste�i)
 builder.Services.AddOpenApi("v1", options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>

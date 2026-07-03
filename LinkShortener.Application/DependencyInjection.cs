@@ -1,4 +1,5 @@
 ﻿using Application.Common.Behaviors;
+using LinkShortener.Application.Common.Behaviors;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LinkShortener.Application;
@@ -13,7 +14,8 @@ public static class DependencyInjection
             cfg.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly);
             
             // 🔥 v14 Kayıt Protokolü: open-generic tipi bu şekilde açıkça deklare ediyoruz
-            cfg.AddOpenBehavior(typeof(ResilienceBehavior<,>));            
+            cfg.AddOpenBehavior(typeof(ResilienceBehavior<,>));
+            cfg.AddOpenBehavior(typeof(TracingBehavior<,>));
         });        
 
         return services;
