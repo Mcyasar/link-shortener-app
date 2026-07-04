@@ -7,8 +7,12 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using LinkShortener.API.Common;
 using LinkShortener.Application.Common.Configurations;
+using OpenTelemetry.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
+
+///TODO otel service url will be defined in the configuration file, not hardcoded here
+var collectorUri = new Uri("http://otel-collector-service:4317");
 
 builder.Services.Configure<TelemetrySettings>(builder.Configuration.GetSection("TelemetrySettings"));
 var telemetrySettings = builder.Configuration.GetSection("TelemetrySettings").Get<TelemetrySettings>();
@@ -50,11 +54,23 @@ builder.Services.AddOpenTelemetry()
              tracing.AddOtlpExporter(options =>
             {
                 // Kubernetes içindeki Jaeger servisimizin gRPC endpoint'ini gösteriyoruz
-                options.Endpoint = new Uri("http://jaeger-service:4317");
+                options.Endpoint = collectorUri;
                 options.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.Grpc;
             });
+        }           
+    }).WithMetrics(metrics =>
+    {
+        metrics
+            .AddAspNetCoreInstrumentation() // HTTP istek adetleri, süreleri vb. otomatik toplar
+            .AddHttpClientInstrumentation() // Dışarı giden HTTP metrikleri
+            .AddRuntimeInstrumentation();    // 🚀 GC (Garbage Collection), Thread Pool, CPU/RAM metrikleri
+            
+        // 🚀 METRİKLER İÇİN OTLP EXPORTER
+        if (!builder.Environment.IsDevelopment())
+        {
+            metrics.AddOtlpExporter(o => { o.Endpoint = collectorUri; o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.Grpc; });
         }
-           
+
     });
 
 builder.Services.AddCors(options =>
@@ -107,7 +123,6 @@ var app = builder.Build();
 
 app.UseRouting();
 
-
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -136,7 +151,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseRateLimiter();
-
 
 if (app.Environment.IsProduction())
 {
