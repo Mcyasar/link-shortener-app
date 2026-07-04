@@ -63,7 +63,8 @@ builder.Services.AddOpenTelemetry()
         metrics
             .AddAspNetCoreInstrumentation() // HTTP istek adetleri, süreleri vb. otomatik toplar
             .AddHttpClientInstrumentation() // Dışarı giden HTTP metrikleri
-            .AddRuntimeInstrumentation();    // 🚀 GC (Garbage Collection), Thread Pool, CPU/RAM metrikleri
+            .AddRuntimeInstrumentation()  // 🚀 GC (Garbage Collection), Thread Pool
+            .AddProcessInstrumentation(); // 🚀 CPU ve RAM metriklerinin kilidini açar
             
         // 🚀 METRİKLER İÇİN OTLP EXPORTER
         if (!builder.Environment.IsDevelopment())
