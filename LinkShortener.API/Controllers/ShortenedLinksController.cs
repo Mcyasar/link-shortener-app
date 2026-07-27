@@ -1,9 +1,6 @@
 ﻿using LinkShortener.Application.Features.ShortenedLinks.Commands.CreateShortLink;
-using LinkShortener.Application.Features.ShortenedLinks.Events;
 using LinkShortener.Application.Features.ShortenedLinks.Queries.GetOriginalLink;
-using LinkShortener.Application.Interfaces;
 using LinkShortener.Application.Features.ShortenedLinks.Queries.GetUserLinks;
-using LinkShortener.Infrastructure.Resilience;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -66,8 +63,7 @@ public sealed class ShortenedLinksController : ControllerBase
     [ProducesResponseType(StatusCodes.Status302Found)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     //[CustomRateLimit(permitLimit: 100, windowInSeconds: 1)]
-    public async Task<IActionResult> RedirectToOriginal(string shortCode, 
-        [FromServices] ILinkClickChannel clickChannel, // Kanalı inject ediyoruz
+    public async Task<IActionResult> RedirectToOriginal(string shortCode,
         CancellationToken cancellationToken)
     {
         try
@@ -79,9 +75,6 @@ public sealed class ShortenedLinksController : ControllerBase
             {
                 return NotFound(new { Message = "Kısa kod bulunamadı veya süresi dolmuş." });
             }
-
-            // await kullanmıyoruz, çünkü arka plan kuyruğuna yazma işlemi milisaniyeden kısa sürer ve HTTP isteğini bekletmez
-            _ = clickChannel.WriteAsync(new LinkClickedEvent(shortCode, DateTime.UtcNow), cancellationToken);
 
             // Ziyaretçiyi orijinal web sitesine (HTTP 302 - Geçici Yönlendirme) fırlatıyoruz
             return Redirect(originalUrl);

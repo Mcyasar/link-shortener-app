@@ -19,6 +19,9 @@ using StackExchange.Redis;
 using LinkShortener.Infrastructure.BackgroundWorkers;
 using LinkShortener.Infrastructure.Resilience;
 using LinkShortener.Infrastructure.Services;
+using MassTransit;
+using LinkShortener.Application.Configurations;
+using LinkShortener.Infrastructure.Consumers;
 
 namespace LinkShortener.Infrastructure;
 
@@ -117,6 +120,57 @@ public static class DependencyInjection
 
         services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 
+
+        // Pod'un Worker olarak mı yoksa API olarak mı çalıştığını kontrol ediyoruz
+        bool isWorkerEnabled = configuration.GetValue<bool>("MassTransitWorkerEnabled", true);
+
+        var rabbitMQOptions = configuration
+            .GetSection(RabbitMQOptions.SectionName)
+            .Get<RabbitMQOptions>() ?? new RabbitMQOptions();
+
+        services.AddMassTransit(x =>
+        {
+            if (isWorkerEnabled)
+            {
+                x.AddConsumer<LinkClickedConsumer>();
+            }
+
+            // İleride yazacağımız Consumer sınıflarını otomatik tarayıp bulur
+            x.SetKebabCaseEndpointNameFormatter();
+
+            // RabbitMQ Konfigürasyonu
+            x.UsingRabbitMq((context, cfg) =>
+            {
+                // Host adresimiz (Docker zerindeki RabbitMQ)
+                cfg.Host(rabbitMQOptions.Host, rabbitMQOptions.VirtualHost, h =>
+                {
+                    h.Username(rabbitMQOptions.Username);
+                    h.Password(rabbitMQOptions.Password);
+                });
+
+                // Otomatik retry ve hatalı mesaj (DLQ) yönetimi
+                cfg.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(2)));
+
+                if (isWorkerEnabled)
+                {
+                    // Kuyruk Dinleme (Consumer) Ayarları - Yalnızca Worker Pod'unda Aktif
+                    cfg.ReceiveEndpoint("link-clicked-event", e =>
+                    {
+                        e.PrefetchCount = 100;
+                        
+                        // DynamoDB 1.000 WCU sınırını tek pod üzerinde %100 garantiye alan Rate Limiter:
+                        e.UseRateLimit(800, TimeSpan.FromSeconds(1));
+                        
+                        e.ConcurrentMessageLimit = 50;
+
+                        e.ConfigureConsumer<LinkClickedConsumer>(context);
+                    });
+                }
+
+                cfg.ConfigureEndpoints(context);
+            });
+        });
+
         return services;
     }
 
@@ -131,7 +185,7 @@ public static class DependencyInjection
         services.AddHostedService<LinkClickProcessorWorker>();
 
         return services;
-    }
+    }    
 }
 
 public static class DynamoDbInitializer

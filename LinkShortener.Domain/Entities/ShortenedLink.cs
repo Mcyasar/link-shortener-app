@@ -29,6 +29,10 @@ public sealed class ShortenedLink
         ExpiresAt = expiresAt;
     }
 
+    /// <summary>
+    /// TODO bu method silinecek
+    /// </summary>
+    /// <exception cref="InvalidOperationException"></exception>
     // İş Mantığı Metodu: Her tıklamada sayacı artırır
     public void RecordClick()
     {
