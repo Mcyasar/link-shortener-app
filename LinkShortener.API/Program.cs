@@ -124,7 +124,7 @@ var app = builder.Build();
 
 app.UseRouting();
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Local"))
 {
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
