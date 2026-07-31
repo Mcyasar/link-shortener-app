@@ -14,6 +14,12 @@ internal static class RateLimiterSetup
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
+            options.OnRejected = async (context, token) =>
+            {
+                context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                await context.HttpContext.Response.WriteAsync("Çok fazla istek gönderdiniz. Lütfen bekleyin.", token);
+            };
+
             // 💡 DİNAMİK TEK POLİTİKA: Tüm parametrik istekleri bu isim altında toplayacağız
             options.AddPolicy("dynamic-parametric-policy", context =>
             {
@@ -32,14 +38,19 @@ internal static class RateLimiterSetup
                 int window = customRateLimitMeta.WindowInSeconds;
                 string clientKey = context.Request.Headers.Host.ToString();
 
+                // Partition key'e limit ve window değerlerini de gömüyoruz ki 
+                // .NET arkada bu parametrelere sahip limiter'ı CACHE'lesin, her istekte new'lemesin!
+                string partitionKey = $"{clientKey}_{context.Request.Path}_{limit}_{window}";
+
                 // 4. Adım: Değerleri anlık olarak besleyerek limiter'ı inşa et ve döndür
                 return RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: $"{clientKey}_{context.Request.Path}",
+                    partitionKey: partitionKey,
                     factory: partition => new FixedWindowRateLimiterOptions
                     {
                         AutoReplenishment = true,
-                        PermitLimit = limit, // 🔥 İşte metottan gelen dinamik 15 değeri!
-                        Window = TimeSpan.FromSeconds(window)
+                        PermitLimit = limit,
+                        Window = TimeSpan.FromSeconds(window),
+                        QueueLimit = 0 // Sıraya alma, aşılırsa doğrudan OnRejected çalışsın!
                     });
             });
         });
