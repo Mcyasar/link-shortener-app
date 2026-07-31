@@ -11,6 +11,10 @@ using OpenTelemetry.Metrics;
 using Microsoft.AspNetCore.Diagnostics;
 using Polly.Timeout;
 using Polly.CircuitBreaker;
+using System.Net;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -121,6 +125,11 @@ builder.Services.AddOpenApi("v1", options =>
         document.SecurityRequirements = new List<OpenApiSecurityRequirement> { requirement };
         return Task.CompletedTask;
     });
+});
+
+builder.Services.Configure<SocketTransportOptions>(options =>
+{
+    options.Backlog = 1024; // Gelen TCP bağlantı kuyruğunu genişletir
 });
 
 builder.WebHost.ConfigureKestrel(options =>
