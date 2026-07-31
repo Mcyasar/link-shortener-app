@@ -123,6 +123,12 @@ builder.Services.AddOpenApi("v1", options =>
     });
 });
 
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
+});
+
 var app = builder.Build();
 
 app.UseRouting();
