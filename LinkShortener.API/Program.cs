@@ -18,6 +18,10 @@ using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Varsayılan düşük MinThreads değerini 500 VU yükü için önceden ısıtıyoruz
+ThreadPool.GetMinThreads(out int currentMinWorker, out int currentMinCompletion);
+ThreadPool.SetMinThreads(500, currentMinCompletion); // Worker thread alt limitini 500 yap
+
 ///TODO otel service url will be defined in the configuration file, not hardcoded here
 var collectorUri = new Uri("http://otel-collector-service:4317");
 
@@ -136,6 +140,10 @@ builder.WebHost.ConfigureKestrel(options =>
 {
     options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
     options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(30);
+
+    // KESTREL 5 SANİYE TIMEOUT KORUMASINI DEVRE DIŞI BIRAKIN
+    options.Limits.MinRequestBodyDataRate = null;
+    options.Limits.MinResponseDataRate = null;
 });
 
 var app = builder.Build();
