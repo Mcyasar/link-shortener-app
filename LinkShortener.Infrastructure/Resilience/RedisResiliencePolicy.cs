@@ -11,7 +11,10 @@ internal static class ResilienceSetup
     public static IServiceCollection AddResilienceStrategy(this IServiceCollection services)
     {
         var defaultResiliencePipeline = new ResiliencePipelineBuilder()
-            // 1. STRATEJİ: Genel Yeniden Deneme (Retry)
+            // 1. Dış Timeout (Total Timeout): Bütün retry'lar dahil bu istek TOPLAM 10 saniyeyi geçemez.
+            .AddTimeout(TimeSpan.FromSeconds(10))
+
+            // 2. STRATEJİ: Genel Yeniden Deneme (Retry)
             .AddRetry(new RetryStrategyOptions
             {
                 ShouldHandle = new PredicateBuilder().Handle<TimeoutRejectedException>().Handle<Exception>(),
@@ -20,12 +23,12 @@ internal static class ResilienceSetup
                 BackoffType = DelayBackoffType.Exponential // 200ms, 400ms, 800ms olarak esne
             })            
 
-            // 2. KATMAN: CIRCUIT BREAKER (Devre Kesici)
+            // 3. KATMAN: CIRCUIT BREAKER (Devre Kesici)
             .AddCircuitBreaker(new CircuitBreakerStrategyOptions
             {
                 FailureRatio = 0.5, // İsteklerin %50'si hata verirse devreyi aç
                 SamplingDuration = TimeSpan.FromSeconds(10), // Son 10 saniyeyi analiz et
-                MinimumThroughput = 20, // En az 20 istek geldikten sonra analize baş (Dev ortamı için ideal)
+                MinimumThroughput = 20, // En az 20 istek geldikten sonra analize başla (Dev ortamı için ideal)
                 BreakDuration = TimeSpan.FromSeconds(15), // Devre açılırsa 15 saniye boyunca tüm işlemleri iptal et
 
                 // Tüm exception'lar için devreyi aç
@@ -48,9 +51,8 @@ internal static class ResilienceSetup
                 }
             })
 
-            // 3. KATMAN: TIMEOUT (Zaman Aşımı Koruması)
-            // Komut 2000 ms içinde dönmezsa Polly işlemi zorla iptal eder (Hata fırlatır)
-            .AddTimeout(TimeSpan.FromSeconds(5))
+            // 4. İç Timeout (Attempt Timeout): SADECE tek bir retry/deneme için max 3 saniye sınır koyar.
+            .AddTimeout(TimeSpan.FromSeconds(3))
 
             .Build();
 

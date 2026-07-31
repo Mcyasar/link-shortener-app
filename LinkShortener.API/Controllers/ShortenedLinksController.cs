@@ -77,7 +77,8 @@ public sealed class ShortenedLinksController : ControllerBase
             }
 
             // Ziyaretçiyi orijinal web sitesine (HTTP 302 - Geçici Yönlendirme) fırlatıyoruz
-            return Redirect(originalUrl);
+            //return Redirect(originalUrl);
+            return new JsonResult(new { RedirectUrl = originalUrl }) { StatusCode = StatusCodes.Status302Found };
         }
         catch (KeyNotFoundException)
         {

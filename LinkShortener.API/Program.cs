@@ -8,6 +8,9 @@ using OpenTelemetry.Trace;
 using LinkShortener.API.Common;
 using LinkShortener.Application.Common.Configurations;
 using OpenTelemetry.Metrics;
+using Microsoft.AspNetCore.Diagnostics;
+using Polly.Timeout;
+using Polly.CircuitBreaker;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -159,5 +162,25 @@ if (app.Environment.IsProduction())
 }
 
 app.MapControllers();
+
+app.UseExceptionHandler(exceptionHandlerApp =>
+{
+    exceptionHandlerApp.Run(async context =>
+    {
+        var exceptionHandlerFeature = context.Features.Get<IExceptionHandlerFeature>();
+        var exception = exceptionHandlerFeature?.Error;
+
+        if (exception is TimeoutRejectedException)
+        {
+            context.Response.StatusCode = StatusCodes.Status504GatewayTimeout;
+            await context.Response.WriteAsJsonAsync(new { error = "İşlem zaman aşımına uğradı (Polly Timeout)." });
+        }
+        else if (exception is BrokenCircuitException)
+        {
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            await context.Response.WriteAsJsonAsync(new { error = "Devre kesici açık, servis geçici olarak kullanım dışı." });
+        }
+    });
+});
 
 app.Run();
