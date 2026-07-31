@@ -46,9 +46,20 @@ public sealed class GetOriginalLinkQueryHandler : IRequestHandler<GetOriginalLin
                 shortenedLink.OriginalUrl.Value,
                 TimeSpan.FromHours(1),
                 cancellationToken);
-        }        
+        }
 
-        await _publishEndpoint.Publish(new LinkClickedEvent(request.ShortCode, DateTime.UtcNow), cancellationToken); // Tıklama sayısını artırmak için event yayınlıyoruz
+        _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _publishEndpoint.Publish(new LinkClickedEvent(request.ShortCode, DateTime.UtcNow));
+                }
+                catch (Exception ex)
+                {
+                    // Loglama (RabbitMQ geçici ulaşılamaz olsa bile kullanıcı etkilenmez)
+                    //_logger.LogError(ex, "LinkClickedEvent publish edilirken hata oluştu.");
+                }
+            }, CancellationToken.None);
 
         return cachedUrl;
     }
