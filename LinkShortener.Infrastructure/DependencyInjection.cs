@@ -92,6 +92,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, EfUserRepository>();
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 
+        services.AddScoped<ILinkClickOutboxRepository, EfLinkClickOutboxRepository>();
         services.AddScoped<IShortenedLinkRepository, DynamoDbShortenedLinkRepository>();
 
         // =========================================================================

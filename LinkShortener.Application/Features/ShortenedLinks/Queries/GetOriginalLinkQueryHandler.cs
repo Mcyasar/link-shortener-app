@@ -1,25 +1,22 @@
 ﻿using MediatR;
 using LinkShortener.Application.Interfaces;
-using MassTransit;
-using LinkShortener.Application.Features.ShortenedLinks.Events;
+using LinkShortener.Domain.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace LinkShortener.Application.Features.ShortenedLinks.Queries.GetOriginalLink;
 
-public sealed class GetOriginalLinkQueryHandler : IRequestHandler<GetOriginalLinkQuery, string>
+public sealed class GetOriginalLinkQueryHandler(
+    IShortenedLinkRepository linkRepository,
+    ICacheService cacheService,
+    ILinkClickOutboxRepository linkClickOutboxRepository,
+    IUnitOfWork unitOfWork,
+    ILogger<GetOriginalLinkQueryHandler> logger) : IRequestHandler<GetOriginalLinkQuery, string>
 {
-    private readonly IPublishEndpoint _publishEndpoint;
-    private readonly IShortenedLinkRepository _linkRepository;
-    private readonly ICacheService _cacheService;
-
-    public GetOriginalLinkQueryHandler(
-        IPublishEndpoint publishEndpoint,
-        IShortenedLinkRepository linkRepository,
-        ICacheService cacheService)
-    {
-        _publishEndpoint = publishEndpoint;
-        _linkRepository = linkRepository;
-        _cacheService = cacheService;
-    }
+    private readonly IShortenedLinkRepository _linkRepository = linkRepository;
+    private readonly ICacheService _cacheService = cacheService;
+    private readonly ILinkClickOutboxRepository _linkClickOutboxRepository = linkClickOutboxRepository;
+    private readonly IUnitOfWork _unitOfWork = unitOfWork;
+    private readonly ILogger<GetOriginalLinkQueryHandler> _logger = logger;
 
     public async Task<string> Handle(GetOriginalLinkQuery request, CancellationToken cancellationToken)
     {
@@ -48,18 +45,12 @@ public sealed class GetOriginalLinkQueryHandler : IRequestHandler<GetOriginalLin
                 cancellationToken);
         }
 
-        _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _publishEndpoint.Publish(new LinkClickedEvent(request.ShortCode, DateTime.UtcNow));
-                }
-                catch (Exception ex)
-                {
-                    // Loglama (RabbitMQ geçici ulaşılamaz olsa bile kullanıcı etkilenmez)
-                    //_logger.LogError(ex, "LinkClickedEvent publish edilirken hata oluştu.");
-                }
-            }, CancellationToken.None);
+        // Outbox pattern: LinkClickedEvent'i doğrudan RabbitMQ'ya göndermek yerine PostgreSQL outbox tablosuna kaydediyoruz.
+        var outboxEntry = new LinkClickOutbox(request.ShortCode, DateTime.UtcNow);
+        await _linkClickOutboxRepository.AddAsync(outboxEntry, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken); // Outbox kaydını veritabanına kaydet
+
+        _logger.LogInformation("LinkClickedEvent for ShortCode: {ShortCode} saved to outbox.", request.ShortCode);
 
         return cachedUrl;
     }

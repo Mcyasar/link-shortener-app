@@ -1,6 +1,4 @@
 ﻿using MediatR;
-using System;
-using System.Collections.Generic;
 
 namespace LinkShortener.Application.Features.ShortenedLinks.Queries.GetUserLinks;
 
