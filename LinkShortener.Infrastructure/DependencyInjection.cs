@@ -173,6 +173,13 @@ public static class DependencyInjection
                 });
             });
 
+            // 🔥 KRİTİK EKSİK: MassTransit'in arka plan servisini (HostedService) 
+            // ve ana otobüsünü çalıştırması için In-Memory Transport tanımı:
+            x.UsingInMemory((context, cfg) =>
+            {
+                cfg.ConfigureEndpoints(context);
+            });
+
             // RabbitMQ Konfigürasyonu
             // x.UsingRabbitMq(...) // Bu blok artık kullanılmadığı için kaldırıldı
         });
@@ -180,18 +187,18 @@ public static class DependencyInjection
         return services;
     }
 
-    public static IServiceCollection AddBackgroundWorkerServices(this IServiceCollection services)
-    {
-        // 1. CHANNEL: Bellekte tek bir kuyruk olması için kesinlikle Singleton!
-        services.AddSingleton<ILinkClickChannel, LinkClickChannel>();
+    // public static IServiceCollection AddBackgroundWorkerServices(this IServiceCollection services)
+    // {
+    //     // 1. CHANNEL: Bellekte tek bir kuyruk olması için kesinlikle Singleton!
+    //     services.AddSingleton<ILinkClickChannel, LinkClickChannel>();
 
-        // 2. WORKER: Arka planda sürekli çalışacak olan Hosted Service/BackgroundService kaydı.
-        // .NET mimarisinde arka plan işçileri AddHostedService metoduyla tescillenir.
-        // Bu metot arka planda o sınıfı otomatik olarak Singleton olarak yönetir.
-        // services.AddHostedService<LinkClickProcessorWorker>();
+    //     // 2. WORKER: Arka planda sürekli çalışacak olan Hosted Service/BackgroundService kaydı.
+    //     // .NET mimarisinde arka plan işçileri AddHostedService metoduyla tescillenir.
+    //     // Bu metot arka planda o sınıfı otomatik olarak Singleton olarak yönetir.
+    //     // services.AddHostedService<LinkClickProcessorWorker>();
 
-        return services;
-    }    
+    //     return services;
+    // }    
 }
 
 public static class DynamoDbInitializer

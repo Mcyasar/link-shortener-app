@@ -38,7 +38,7 @@ builder.Services.AddAuthentication(options =>
 // 1. Katmanların Bağımlılık Enjeksiyonlarını (DI) Bağlıyoruz
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
-builder.Services.AddBackgroundWorkerServices();
+//builder.Services.AddBackgroundWorkerServices();
 
 builder.Services.AddControllers();
 
