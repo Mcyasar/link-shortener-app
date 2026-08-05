@@ -16,12 +16,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using LinkShortener.Application.Services;
 using StackExchange.Redis;
-using LinkShortener.Infrastructure.BackgroundWorkers;
 using LinkShortener.Infrastructure.Resilience;
 using LinkShortener.Infrastructure.Services;
 using MassTransit;
 using LinkShortener.Application.Configurations;
 using LinkShortener.Infrastructure.Consumers;
+using LinkShortener.Domain.Entities;
 
 namespace LinkShortener.Infrastructure;
 
@@ -125,9 +125,9 @@ public static class DependencyInjection
         // Pod'un Worker olarak mı yoksa API olarak mı çalıştığını kontrol ediyoruz
         bool isWorkerEnabled = configuration.GetValue<bool>("MassTransitWorkerEnabled", true);
 
-        var rabbitMQOptions = configuration
-            .GetSection(RabbitMQOptions.SectionName)
-            .Get<RabbitMQOptions>() ?? new RabbitMQOptions();
+        // var rabbitMQOptions = configuration
+        //     .GetSection(RabbitMQOptions.SectionName)
+        //     .Get<RabbitMQOptions>() ?? new RabbitMQOptions();
 
         services.AddMassTransit(x =>
         {
@@ -139,37 +139,42 @@ public static class DependencyInjection
             // İleride yazacağımız Consumer sınıflarını otomatik tarayıp bulur
             x.SetKebabCaseEndpointNameFormatter();
 
-            // RabbitMQ Konfigürasyonu
-            x.UsingRabbitMq((context, cfg) =>
+            // 🔥 Kafka bir Rider olarak eklenmelidir
+            x.AddRider(rider =>
             {
-                // Host adresimiz (Docker zerindeki RabbitMQ)
-                cfg.Host(rabbitMQOptions.Host, rabbitMQOptions.VirtualHost, h =>
-                {
-                    h.Username(rabbitMQOptions.Username);
-                    h.Password(rabbitMQOptions.Password);
-                });
+                // 1. Consumer'ı Rider'a ekleyin
+                //rider.AddConsumer<LinkClickKafkaConsumer>();
 
-                // Otomatik retry ve hatalı mesaj (DLQ) yönetimi
-                cfg.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(2)));
-
-                if (isWorkerEnabled)
+                // 2. UsingKafka metodunu 'rider' üzerinden çağırın
+                rider.UsingKafka((context, cfg) =>
                 {
-                    // Kuyruk Dinleme (Consumer) Ayarları - Yalnızca Worker Pod'unda Aktif
-                    cfg.ReceiveEndpoint("link-clicked-event", e =>
+                    cfg.Host("local-docker-host:9092"); // Docker Compose içindeki Kafka servisinizin adresi
+
+                    if (isWorkerEnabled)
                     {
-                        e.PrefetchCount = 100;
-                        
-                        // DynamoDB 1.000 WCU sınırını tek pod üzerinde %100 garantiye alan Rate Limiter:
-                        e.UseRateLimit(800, TimeSpan.FromSeconds(1));
-                        
-                        e.ConcurrentMessageLimit = 50;
+                        // Debezium'un oluşturduğu topic'i dinliyoruz
+                        // Topic adı: database.server.name.schema.table (örn: linkshortener-postgres.public.LinkClickOutbox)
+                        cfg.TopicEndpoint<string, DebeziumMessage>("debezium.public.LinkClickOutbox", "link-shortener-group", e =>
+                        {
+                            // Debezium'un oluşturduğu topic'i dinliyoruz
+                            // Topic adı: database.server.name.schema.table (örn: linkshortener-postgres.public.LinkClickOutbox)
+                            // Otomatik retry ve hatalı mesaj (DLQ) yönetimi
+                            e.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(2)));
 
-                        e.ConfigureConsumer<LinkClickedConsumer>(context);
-                    });
-                }
+                            // DynamoDB 1.000 WCU sınırını tek pod üzerinde %100 garantiye alan Rate Limiter:
+                            e.UseRateLimit(800, TimeSpan.FromSeconds(1));
 
-                cfg.ConfigureEndpoints(context);
+                            // Debezium mesajları JSON formatında ve şemasız geldiği için RawJsonDeserializer kullanıyoruz.
+                            // Bu, MassTransit'in gelen ham JSON'u doğrudan DebeziumMessage DTO'muza dönüştürmesini sağlar.
+                            e.UseRawJsonDeserializer();
+                            e.ConfigureConsumer<LinkClickedConsumer>(context);
+                        });
+                    }
+                });
             });
+
+            // RabbitMQ Konfigürasyonu
+            // x.UsingRabbitMq(...) // Bu blok artık kullanılmadığı için kaldırıldı
         });
 
         return services;
@@ -183,7 +188,7 @@ public static class DependencyInjection
         // 2. WORKER: Arka planda sürekli çalışacak olan Hosted Service/BackgroundService kaydı.
         // .NET mimarisinde arka plan işçileri AddHostedService metoduyla tescillenir.
         // Bu metot arka planda o sınıfı otomatik olarak Singleton olarak yönetir.
-        services.AddHostedService<LinkClickProcessorWorker>();
+        // services.AddHostedService<LinkClickProcessorWorker>();
 
         return services;
     }    

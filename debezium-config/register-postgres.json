@@ -1,0 +1,24 @@
+{
+  "name": "link-shortener-postgres-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "local-postgres",
+    "database.port": "5432",
+    "database.user": "admin",
+    "database.password": "secretpassword",
+    "database.dbname": "linkshortener_db",
+    "database.server.name": "linkshortener-postgres",
+    "table.include.list": "public.LinkClickOutbox",
+    "plugin.name": "pgoutput",
+    "slot.name": "debezium_slot",
+    "topic.prefix": "debezium",
+    "heartbeat.interval.ms": "5000",
+    "snapshot.mode": "initial",
+    "publication.name": "debezium_publication",
+    "schema.include.list": "public",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false"
+  }
+}

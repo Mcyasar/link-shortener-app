@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 1. AWS DynamoDB yerine: DynamoDB Local
+  # 1. AWS DynamoDB Local
   local-dynamodb:
     image: amazon/dynamodb-local:latest
     container_name: link-shortener-local-dynamodb
@@ -12,7 +12,7 @@ services:
       - dynamodb_data:/home/dynamodblocal/data
     command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data"
 
-  # 2. AWS ElastiCache yerine: Redis Alpine
+  # 2. Redis Alpine
   local-redis:
     image: redis:alpine
     container_name: link-shortener-local-redis
@@ -21,6 +21,7 @@ services:
     volumes:
       - redis_data:/data
 
+  # 3. PostgreSQL (CDC / Logical Replication Aktif)
   local-postgres:
     image: postgres:16-alpine
     container_name: linkshortener-postgres
@@ -30,8 +31,109 @@ services:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=secretpassword
       - POSTGRES_DB=linkshortener_db
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    # Command ile WAL level ve replication slot ayarlarını güvenle veriyoruz
+    command: 
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d linkshortener_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 4. Zookeeper
+  local-zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: linkshortener-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 5. Kafka Broker
+  local-kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: linkshortener-kafka
+    ports:
+      - "9092:9092" # Docker İçi
+      - "9093:9093" # Host (Lokal Debug / IDE)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: local-zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://local-kafka:9092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    depends_on:
+      local-zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 6. Debezium Kafka Connect (İçinde Debezium Postgres Sürücüsü Hazır Gelir)
+  local-kafka-connect:
+    image: debezium/connect:2.7.3.Final
+    container_name: linkshortener-kafka-connect
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: local-kafka:9092
+      GROUP_ID: "debezium-connect-cluster"
+      CONFIG_STORAGE_TOPIC: "connect-configs"
+      OFFSET_STORAGE_TOPIC: "connect-offsets"
+      STATUS_STORAGE_TOPIC: "connect-statuses"
+      KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+    depends_on:
+      local-kafka:
+        condition: service_healthy
+      local-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8083/connectors || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 7. Connector Register Job (Otomatik Registrasyon Yapar ve Kapanır)
+  debezium-register-connector:
+    image: curlimages/curl:latest
+    container_name: linkshortener-register-connector
+    volumes:
+      - ./debezium-config:/tmp
+    command: >
+      sh -c "
+        echo 'Waiting for Kafka Connect REST API...';
+        while [ $$(curl -s -o /dev/null -w '%{http_code}' http://local-kafka-connect:8083/connectors) -ne 200 ]; do
+          sleep 3;
+        done;
+        echo 'Kafka Connect is ready! Registering Debezium Postgres Connector...';
+        curl -i -X POST -H 'Content-Type: application/json' --data @/tmp/register-postgres.json http://local-kafka-connect:8083/connectors;
+        echo 'Registration complete!';
+      "
+    depends_on:
+      local-kafka-connect:
+        condition: service_healthy
 
 volumes:
   dynamodb_data:

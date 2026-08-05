@@ -1,11 +1,10 @@
 using MassTransit;
 using LinkShortener.Application.Interfaces; // IDynamoDbRepository arayüzünüzün bulunduğu namespace
 using Microsoft.Extensions.Logging;
-using LinkShortener.Application.Features.ShortenedLinks.Events;
 
 namespace LinkShortener.Infrastructure.Consumers;
 
-public class LinkClickedConsumer : IConsumer<LinkClickedEvent>
+public class LinkClickedConsumer : IConsumer<DebeziumMessage>
 {
     private readonly IShortenedLinkRepository _dynamoDbRepository;
     private readonly ILogger<LinkClickedConsumer> _logger;
@@ -16,13 +15,27 @@ public class LinkClickedConsumer : IConsumer<LinkClickedEvent>
         _logger = logger;
     }
 
-    public async Task Consume(ConsumeContext<LinkClickedEvent> context)
+    public async Task Consume(ConsumeContext<DebeziumMessage> context)
     {
-        var message = context.Message;
-        
-        _logger.LogInformation("Processing click count for ShortCode: {ShortCode}", message.ShortCode);
+        var debeziumMessage = context.Message;
 
-        // DynamoDB atomik artırım metodu
-        await _dynamoDbRepository.UpdateAsync(message.ShortCode, context.CancellationToken);
+        // Sadece 'create' (c) operasyonlarını ve 'after' payload'ı olan mesajları işliyoruz
+        if (debeziumMessage?.Payload?.Operation == "c" && debeziumMessage.Payload.After != null)
+        {
+            var afterData = debeziumMessage.Payload.After;
+            
+            // Debezium'dan gelen veriyi kullanarak DynamoDB'yi güncelliyoruz
+            if (!string.IsNullOrEmpty(afterData.ShortCode))
+            {
+                _logger.LogInformation("Processing click count for ShortCode: {ShortCode} from Debezium message.", afterData.ShortCode);
+                await _dynamoDbRepository.UpdateAsync(afterData.ShortCode, context.CancellationToken);
+            } else {
+                _logger.LogWarning("Debezium message for 'create' operation has missing ShortCode in 'after' data.");
+            }
+        }
+        else
+        {
+            _logger.LogWarning("Received Debezium message is not a 'create' operation or 'after' data is missing. Operation: {Operation}", debeziumMessage?.Payload?.Operation);
+        }
     }
 }
