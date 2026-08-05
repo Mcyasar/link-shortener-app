@@ -143,7 +143,7 @@ public static class DependencyInjection
             x.AddRider(rider =>
             {
                 // 1. Consumer'ı Rider'a ekleyin
-                //rider.AddConsumer<LinkClickKafkaConsumer>();
+                rider.AddConsumer<LinkClickedConsumer>();
 
                 // 2. UsingKafka metodunu 'rider' üzerinden çağırın
                 rider.UsingKafka((context, cfg) =>
