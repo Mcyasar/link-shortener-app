@@ -148,7 +148,7 @@ public static class DependencyInjection
                 // 2. UsingKafka metodunu 'rider' üzerinden çağırın
                 rider.UsingKafka((context, cfg) =>
                 {
-                    cfg.Host("local-docker-host:9092"); // Docker Compose içindeki Kafka servisinizin adresi
+                    cfg.Host("local-docker-host:9093"); // Docker Compose içindeki Kafka servisinizin adresi
 
                     if (isWorkerEnabled)
                     {
