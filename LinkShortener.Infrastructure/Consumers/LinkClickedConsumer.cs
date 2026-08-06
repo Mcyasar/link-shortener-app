@@ -21,6 +21,10 @@ public class LinkClickedConsumer : IConsumer<DebeziumMessage>
         if (message?.Payload == null)
         {
             _logger.LogWarning("Debezium mesaj gövdesi (Payload) boş geldi, mesaj atlanıyor.");
+
+            _logger.LogWarning("Debezium Payload null geldi! Gelen Raw Obje: {RawMessage}", 
+                    System.Text.Json.JsonSerializer.Serialize(message));
+
             return;
         }
 
