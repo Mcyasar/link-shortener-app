@@ -33,19 +33,19 @@ public class DebeziumLinkClickOutboxAfter
 public class DebeziumPayload
 {
     [JsonPropertyName("before")]
-    public DebeziumLinkClickOutboxAfter? Before { get; set; } // Güncelleme/silme işlemleri için
+    public DebeziumLinkClickOutboxAfter? Before { get; set; }
 
     [JsonPropertyName("after")]
-    public DebeziumLinkClickOutboxAfter? After { get; set; } // Ekleme/güncelleme işlemleri için
+    public DebeziumLinkClickOutboxAfter? After { get; set; }
 
     [JsonPropertyName("source")]
-    public JsonElement? Source { get; set; } // Kaynak meta verileri
+    public JsonElement? Source { get; set; }
 
     [JsonPropertyName("op")]
-    public string? Operation { get; set; } // İşlem türü: 'c' (create), 'u' (update), 'd' (delete), 'r' (read/snapshot)
+    public string? Operation { get; set; } // Debezium tarafındaki 'op' alanı
 
     [JsonPropertyName("ts_ms")]
-    public long TimestampMs { get; set; } // İşlemin zaman damgası
+    public long TimestampMs { get; set; }
 }
 
 // Represents the full Debezium message structure

@@ -211,7 +211,7 @@ public static class DynamoDbInitializer
         var logger = loggerFactory.CreateLogger("DynamoDbInitializer");
 
         // 🚨 GÜVENLİK DUVARI: Sadece yerel geliştirme (Local Docker) ortamında çalışsın!
-        if (!environment.IsDevelopment()) return;
+        if (!environment.IsDevelopment() && !environment.IsEnvironment("Local")) return;
 
         var client = scope.ServiceProvider.GetRequiredService<IAmazonDynamoDB>();
         const string tableName = "ShortenedLinks"; // Repository ile eşitlendi!
