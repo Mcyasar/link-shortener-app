@@ -159,14 +159,25 @@ public static class DependencyInjection
                             // Debezium'un oluşturduğu topic'i dinliyoruz
                             // Topic adı: database.server.name.schema.table (örn: linkshortener-postgres.public.LinkClickOutbox)
                             // Otomatik retry ve hatalı mesaj (DLQ) yönetimi
-                            e.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(2)));
+                            //e.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(2)));
 
                             // DynamoDB 1.000 WCU sınırını tek pod üzerinde %100 garantiye alan Rate Limiter:
-                            e.UseRateLimit(800, TimeSpan.FromSeconds(1));
+                            //e.UseRateLimit(800, TimeSpan.FromSeconds(1));
 
-                            // Debezium mesajları JSON formatında ve şemasız geldiği için RawJsonDeserializer kullanıyoruz.
-                            // Bu, MassTransit'in gelen ham JSON'u doğrudan DebeziumMessage DTO'muza dönüştürmesini sağlar.
+                            // 1. Deserializer Ayarı: Debezium mesajları Kafka'dan raw JSON geldiği için
                             e.UseRawJsonDeserializer();
+                        
+                            // 2. Prefetch Count: Kafka'dan bir kerede çekilecek mesaj sayısı
+                            e.PrefetchCount = 100;
+                        
+                            // 3. Batching Ayarı: 100 mesaj veya 5 saniye dolunca paketi Consumer'a teslim et
+                            e.Batch<DebeziumMessage>(b =>
+                            {
+                                b.MessageLimit = 100;
+                                b.TimeLimit = TimeSpan.FromSeconds(5);
+                            });
+                        
+                            // 4. Consumer Kaydı
                             e.ConfigureConsumer<LinkClickedConsumer>(context);
                         });
                     }

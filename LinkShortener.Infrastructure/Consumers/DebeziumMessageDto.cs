@@ -51,6 +51,18 @@ public class DebeziumPayload
 // Represents the full Debezium message structure
 public class DebeziumMessage
 {
-    [JsonPropertyName("payload")]
-    public DebeziumPayload? Payload { get; set; }
+    [JsonPropertyName("before")]
+    public DebeziumLinkClickOutboxAfter? Before { get; set; }
+
+    [JsonPropertyName("after")]
+    public DebeziumLinkClickOutboxAfter? After { get; set; }
+
+    [JsonPropertyName("source")]
+    public JsonElement? Source { get; set; }
+
+    [JsonPropertyName("op")]
+    public string? Operation { get; set; } // 'c', 'u', 'd', 'r'
+
+    [JsonPropertyName("ts_ms")]
+    public long TimestampMs { get; set; }
 }

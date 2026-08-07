@@ -1,57 +1,105 @@
 using MassTransit;
 using LinkShortener.Application.Interfaces; // IDynamoDbRepository arayüzünüzün bulunduğu namespace
 using Microsoft.Extensions.Logging;
+using Amazon.DynamoDBv2;
+using Amazon.DynamoDBv2.Model;
 
 namespace LinkShortener.Infrastructure.Consumers;
 
-public class LinkClickedConsumer : IConsumer<DebeziumMessage>
+public class LinkClickedConsumer : IConsumer<Batch<DebeziumMessage>>
 {
+    private readonly IAmazonDynamoDB _dynamoDb;
     private readonly ILogger<LinkClickedConsumer> _logger;
 
-    public LinkClickedConsumer(ILogger<LinkClickedConsumer> logger)
+    private const string TableName = "LinkStats";
+
+    public LinkClickedConsumer(IAmazonDynamoDB dynamoDb, ILogger<LinkClickedConsumer> logger)
     {
+        _dynamoDb = dynamoDb;
         _logger = logger;
     }
 
-    public async Task Consume(ConsumeContext<DebeziumMessage> context)
+    public async Task Consume(ConsumeContext<Batch<DebeziumMessage>> context)
     {
-        var message = context.Message;
+        var messages = context.Message;
 
-        // 1. Zarf veya Payload kontrolü
-        if (message?.Payload == null)
+        if (messages == null || !messages.Any())
         {
-            _logger.LogWarning("Debezium mesaj gövdesi (Payload) boş geldi, mesaj atlanıyor.");
-
-            _logger.LogWarning("Debezium Payload null geldi! Gelen Raw Obje: {RawMessage}", 
-                    System.Text.Json.JsonSerializer.Serialize(message));
-
+            _logger.LogWarning("Debezium batch mesajları bulunamadı veya boş geldi.");
             return;
         }
 
-        var payload = message.Payload;
+        // 1. Gelen batch içerisinden geçerli CDC 'Create' (c) ve 'Snapshot' (r) mesajlarını süz
+        var validMessages = context.Message
+            .Select(x => x.Message)
+            .Where(m => m != null && m.After != null && (m.Operation == "c" || m.Operation == "r"))
+            .ToList();
 
-        // 2. Operasyon tipi ve After kontrolü
-        // Debezium: 'c' (create/insert), 'r' (read/snapshot), 'u' (update), 'd' (delete)
-        if (payload.After == null)
+        if (!validMessages.Any())
         {
-            _logger.LogWarning(
-                "Debezium mesajında 'After' verisi bulunamadı. İşlem Tipi: {Op}. Silme veya Tombstone mesajı olabilir.", 
-                payload.Operation ?? "Bilinmiyor"
-            );
+            _logger.LogWarning("Batch içerisinde geçerli 'Create' veya 'Snapshot' mesajı bulunamadı.");
             return;
         }
 
-        // 3. Veriyi güvenle alıp işleme
-        DebeziumLinkClickOutboxAfter clickData = payload.After;
+        // 2. ShortCode bazında grupla ve 5 saniyelik penceredeki toplam tıklama artışını (sum/count) hesapla
+        var groupedClicks = validMessages
+            .GroupBy(m => m.After!.ShortCode)
+            .Select(g => new
+            {
+                ShortCode = g.Key,
+                IncrementAmount = g.Count() // Bu gruptaki tıklama sayısı
+            })
+            .ToList();
 
         _logger.LogInformation(
-            "Link tıklama CDC mesajı başarıyla alındı. ShortCode: {ShortCode}, ClickedAt: {ClickedAt}",
-            clickData.ShortCode,
-            clickData.ClickedAt
+            "Batch işleniyor: {GroupCount} farklı ShortCode için toplam {TotalEvents} tıklama olayı güncellenecek.",
+            groupedClicks.Count,
+            validMessages.Count
         );
 
-        // ... DynamoDB / Redis kayıt mantığınız ...
-        
-        await Task.CompletedTask;
+        // 3. Her bir ShortCode için DynamoDB Atomic Update çalıştır
+        foreach (var item in groupedClicks)
+        {
+            try
+            {
+                var updateRequest = new UpdateItemRequest
+                {
+                    TableName = TableName,
+                    Key = new Dictionary<string, AttributeValue>
+                    {
+                        { "ShortCode", new AttributeValue { S = item.ShortCode } }
+                    },
+                    // UpdateExpression Püf Noktası:
+                    // 'ADD clickCount :inc' -> Varolan sayıya ekler. Kıymetli kısmı: Kayıt yoksa 0 kabul edip ekler!
+                    // 'SET lastUpdated = :now' -> En son ne zaman güncellendiğini yazar.
+                    UpdateExpression = "ADD clickCount :inc SET lastUpdated = :now",
+                    ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+                    {
+                        { ":inc", new AttributeValue { N = item.IncrementAmount.ToString() } },
+                        { ":now", new AttributeValue { S = DateTime.UtcNow.ToString("o") } }
+                    }
+                };
+
+                await _dynamoDb.UpdateItemAsync(updateRequest, context.CancellationToken);
+
+                _logger.LogDebug(
+                    "DynamoDB güncellendi: ShortCode = {ShortCode}, Eklenen = +{Inc}",
+                    item.ShortCode,
+                    item.IncrementAmount
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "DynamoDB 'LinkStats' güncellenirken hata oluştu! ShortCode: {ShortCode}",
+                    item.ShortCode
+                );
+
+                // Not: Hata durumunda MassTransit'in Kafka offset'i commit etmeyip
+                // batch'i tekrar denemesi için exception fırlatılır.
+                throw;
+            }
+        }
     }
 }
