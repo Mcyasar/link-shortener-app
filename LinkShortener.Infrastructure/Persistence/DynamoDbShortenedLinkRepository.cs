@@ -127,14 +127,12 @@ public sealed class DynamoDbShortenedLinkRepository : IShortenedLinkRepository
         var queryRequest = new QueryRequest
         {
             TableName = "LinkStats",
-            IndexName = "ShortCode", // Kullanıcıya özel GSI'ımızı kullanıyoruz
             KeyConditionExpression = "ShortCode = :v_shortCode",
             ExpressionAttributeValues = new Dictionary<string, AttributeValue>
             {
                 { ":v_shortCode", new AttributeValue { S = shortCode } }
             },
-            ScanIndexForward = false, // En yeni linkleri önce getir (CreatedAt Sort Key olduğu için)
-            ProjectionExpression = "ShortCode, ClickCount, LastUpdated" // Sadece gerekli alanları çekiyoruz
+            ProjectionExpression = "ShortCode, clickCount, lastUpdated" // Sadece gerekli alanları çekiyoruz
         };
 
         var response = await _dynamoDb.QueryAsync(queryRequest, cancellationToken);
@@ -144,8 +142,8 @@ public sealed class DynamoDbShortenedLinkRepository : IShortenedLinkRepository
         {
             links.Add(new LinkStats(
                 shortCode: item["ShortCode"].S,
-                clickCount: int.Parse(item["ClickCount"].N),
-                lastUpdated: DateTime.Parse(item["LastUpdated"].S)
+                clickCount: int.Parse(item["clickCount"].N),
+                lastUpdated: DateTime.Parse(item["lastUpdated"].S)
             ));
         }
 
