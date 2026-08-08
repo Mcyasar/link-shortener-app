@@ -72,6 +72,29 @@ public sealed class DynamoDbShortenedLinkRepository : IShortenedLinkRepository
         await _dynamoDb.UpdateItemAsync(request, cancellationToken);
     }
 
+    public async Task UpdateLinkStatsBySumAsync(string shortCode, dynamic item, CancellationToken cancellationToken)
+    {
+        var request = new UpdateItemRequest
+        {
+            TableName = "LinkStats",
+            Key = new Dictionary<string, AttributeValue>
+            {
+                { "ShortCode", new AttributeValue { S = shortCode } }
+            },
+            // UpdateExpression Püf Noktası:
+            // 'ADD clickCount :inc' -> Varolan sayıya ekler. Kıymetli kısmı: Kayıt yoksa 0 kabul edip ekler!
+            // 'SET lastUpdated = :now' -> En son ne zaman güncellendiğini yazar.
+            UpdateExpression = "ADD clickCount :inc SET lastUpdated = :now",
+            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+            {
+                { ":inc", new AttributeValue { N = item.IncrementAmount.ToString() } },
+                { ":now", new AttributeValue { S = DateTime.UtcNow.ToString("o") } }
+            }
+        };
+
+        await _dynamoDb.UpdateItemAsync(request, cancellationToken);
+    }
+
     public async Task<List<ShortenedLink>> GetLinksByUserIdAsync(Guid userId, CancellationToken cancellationToken)
     {
         var queryRequest = new QueryRequest

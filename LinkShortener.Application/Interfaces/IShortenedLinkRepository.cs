@@ -7,5 +7,6 @@ public interface IShortenedLinkRepository
     Task AddAsync(ShortenedLink link, CancellationToken cancellationToken);
     Task<ShortenedLink?> GetByCodeAsync(string shortCode, CancellationToken cancellationToken);
     Task UpdateAsync(string shortCode, CancellationToken cancellationToken);
+    Task UpdateLinkStatsBySumAsync(string shortCode, dynamic item, CancellationToken cancellationToken);
     Task<List<ShortenedLink>> GetLinksByUserIdAsync(Guid userId, CancellationToken cancellationToken);
 }

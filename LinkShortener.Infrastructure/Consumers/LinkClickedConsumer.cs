@@ -7,18 +7,12 @@ using System.Text.Json;
 
 namespace LinkShortener.Infrastructure.Consumers;
 
-public class LinkClickedConsumer : IConsumer<Batch<DebeziumMessage>>
+public class LinkClickedConsumer(IShortenedLinkRepository shortenedLinkRepository, ILogger<LinkClickedConsumer> logger) : IConsumer<Batch<DebeziumMessage>>
 {
-    private readonly IAmazonDynamoDB _dynamoDb;
-    private readonly ILogger<LinkClickedConsumer> _logger;
+    private readonly ILogger<LinkClickedConsumer> _logger = logger;
+    private readonly IShortenedLinkRepository _shortenedLinkRepository = shortenedLinkRepository;
 
     private const string TableName = "LinkStats";
-
-    public LinkClickedConsumer(IAmazonDynamoDB dynamoDb, ILogger<LinkClickedConsumer> logger)
-    {
-        _dynamoDb = dynamoDb;
-        _logger = logger;
-    }
 
     public async Task Consume(ConsumeContext<Batch<DebeziumMessage>> context)
     {
@@ -57,36 +51,19 @@ public class LinkClickedConsumer : IConsumer<Batch<DebeziumMessage>>
             groupedClicks.Count,
             validMessages.Count
         );
-
-        _logger.LogInformation(
-            "Batch içerisindeki ilk mesaj: {message}",
-            JsonSerializer.Serialize(groupedClicks.First())
-        );
+        
 
         // 3. Her bir ShortCode için DynamoDB Atomic Update çalıştır
         foreach (var item in groupedClicks)
         {
             try
             {
-                var updateRequest = new UpdateItemRequest
-                {
-                    TableName = TableName,
-                    Key = new Dictionary<string, AttributeValue>
-                    {
-                        { "ShortCode", new AttributeValue { S = item.ShortCode } }
-                    },
-                    // UpdateExpression Püf Noktası:
-                    // 'ADD clickCount :inc' -> Varolan sayıya ekler. Kıymetli kısmı: Kayıt yoksa 0 kabul edip ekler!
-                    // 'SET lastUpdated = :now' -> En son ne zaman güncellendiğini yazar.
-                    UpdateExpression = "ADD clickCount :inc SET lastUpdated = :now",
-                    ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-                    {
-                        { ":inc", new AttributeValue { N = item.IncrementAmount.ToString() } },
-                        { ":now", new AttributeValue { S = DateTime.UtcNow.ToString("o") } }
-                    }
-                };
+                _logger.LogInformation(
+                    "Batch içerisindeki mesaj: {message}",
+                     JsonSerializer.Serialize(item.ShortCode) + " / " + item.IncrementAmount
+                );
 
-                await _dynamoDb.UpdateItemAsync(updateRequest, context.CancellationToken);
+                await _shortenedLinkRepository.UpdateLinkStatsBySumAsync(item.ShortCode, item, context.CancellationToken);
 
                 _logger.LogDebug(
                     "DynamoDB güncellendi: ShortCode = {ShortCode}, Eklenen = +{Inc}",
