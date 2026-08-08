@@ -65,6 +65,12 @@ public class LinkClickedConsumer(IShortenedLinkRepository shortenedLinkRepositor
 
                 await _shortenedLinkRepository.UpdateLinkStatsBySumAsync(item.ShortCode, item, context.CancellationToken);
 
+                _logger.LogInformation(
+                    "DynamoDB güncellendi: ShortCode = {ShortCode}, Eklenen = +{Inc}",
+                    item.ShortCode,
+                    item.IncrementAmount
+                );
+
                 _logger.LogDebug(
                     "DynamoDB güncellendi: ShortCode = {ShortCode}, Eklenen = +{Inc}",
                     item.ShortCode,
@@ -73,6 +79,11 @@ public class LinkClickedConsumer(IShortenedLinkRepository shortenedLinkRepositor
             }
             catch (Exception ex)
             {
+                _logger.LogInformation(
+                    "DynamoDB 'LinkStats' güncellenirken hata oluştu! ShortCode: {ShortCode}",
+                    item.ShortCode
+                );
+
                 _logger.LogError(
                     ex,
                     "DynamoDB 'LinkStats' güncellenirken hata oluştu! ShortCode: {ShortCode}",
