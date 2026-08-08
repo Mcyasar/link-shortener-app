@@ -122,6 +122,36 @@ public sealed class DynamoDbShortenedLinkRepository : IShortenedLinkRepository
         return links;
     }
 
+    public async Task<List<LinkStats>> GetLinksStatsByUserIdAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var queryRequest = new QueryRequest
+        {
+            TableName = "LinkStats",
+            IndexName = "UserLinksIndex", // Kullanıcıya özel GSI'ımızı kullanıyoruz
+            KeyConditionExpression = "UserId = :v_userId",
+            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
+            {
+                { ":v_userId", new AttributeValue { S = userId.ToString() } }
+            },
+            ScanIndexForward = false, // En yeni linkleri önce getir (CreatedAt Sort Key olduğu için)
+            ProjectionExpression = "ShortCode, ClickCount, LastUpdated" // Sadece gerekli alanları çekiyoruz
+        };
+
+        var response = await _dynamoDb.QueryAsync(queryRequest, cancellationToken);
+
+        var links = new List<LinkStats>();
+        foreach (var item in response.Items)
+        {
+            links.Add(new LinkStats(
+                shortCode: item["ShortCode"].S,
+                clickCount: int.Parse(item["ClickCount"].N),
+                lastUpdated: DateTime.Parse(item["LastUpdated"].S)
+            ));
+        }
+
+        return links;
+    }
+
 
 
     // --- DDD Entity <-> DynamoDB Mapping Mantığı ---

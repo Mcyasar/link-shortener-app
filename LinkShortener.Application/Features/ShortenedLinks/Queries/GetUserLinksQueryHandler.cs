@@ -1,9 +1,5 @@
 ﻿using MediatR;
 using LinkShortener.Application.Interfaces;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace LinkShortener.Application.Features.ShortenedLinks.Queries.GetUserLinks;
 
@@ -19,12 +15,13 @@ public sealed class GetUserLinksQueryHandler : IRequestHandler<GetUserLinksQuery
     public async Task<List<ShortenedLinkDto>> Handle(GetUserLinksQuery request, CancellationToken cancellationToken)
     {
         var links = await _linkRepository.GetLinksByUserIdAsync(request.UserId, cancellationToken);
+        var linkStats = await _linkRepository.GetLinksStatsByUserIdAsync(request.UserId, cancellationToken);
 
         return links.Select(link => new ShortenedLinkDto(
             link.Id,
             link.ShortCode,
             link.OriginalUrl.Value,
-            link.ClickCount,
+            linkStats.FirstOrDefault(stat => stat.ShortCode == link.ShortCode)?.ClickCount ?? 0,
             link.CreatedAt,
             link.ExpiresAt
         )).ToList();
