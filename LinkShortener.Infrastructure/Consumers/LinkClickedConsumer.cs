@@ -3,6 +3,7 @@ using LinkShortener.Application.Interfaces; // IDynamoDbRepository arayüzünüz
 using Microsoft.Extensions.Logging;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
+using System.Text.Json;
 
 namespace LinkShortener.Infrastructure.Consumers;
 
@@ -55,6 +56,11 @@ public class LinkClickedConsumer : IConsumer<Batch<DebeziumMessage>>
             "Batch işleniyor: {GroupCount} farklı ShortCode için toplam {TotalEvents} tıklama olayı güncellenecek.",
             groupedClicks.Count,
             validMessages.Count
+        );
+
+        _logger.LogInformation(
+            "Batch içerisindeki ilk mesaj: {message}",
+            JsonSerializer.Serialize(groupedClicks.First())
         );
 
         // 3. Her bir ShortCode için DynamoDB Atomic Update çalıştır
