@@ -122,16 +122,16 @@ public sealed class DynamoDbShortenedLinkRepository : IShortenedLinkRepository
         return links;
     }
 
-    public async Task<List<LinkStats>> GetLinksStatsByUserIdAsync(Guid userId, CancellationToken cancellationToken)
+    public async Task<List<LinkStats>> GetShortCodeStatsAsync(string shortCode, CancellationToken cancellationToken)
     {
         var queryRequest = new QueryRequest
         {
             TableName = "LinkStats",
-            IndexName = "UserLinksIndex", // Kullanıcıya özel GSI'ımızı kullanıyoruz
-            KeyConditionExpression = "UserId = :v_userId",
+            IndexName = "ShortCode", // Kullanıcıya özel GSI'ımızı kullanıyoruz
+            KeyConditionExpression = "ShortCode = :v_shortCode",
             ExpressionAttributeValues = new Dictionary<string, AttributeValue>
             {
-                { ":v_userId", new AttributeValue { S = userId.ToString() } }
+                { ":v_shortCode", new AttributeValue { S = shortCode } }
             },
             ScanIndexForward = false, // En yeni linkleri önce getir (CreatedAt Sort Key olduğu için)
             ProjectionExpression = "ShortCode, ClickCount, LastUpdated" // Sadece gerekli alanları çekiyoruz

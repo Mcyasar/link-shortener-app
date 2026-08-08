@@ -8,7 +8,7 @@ public sealed class ShortenedLink
     public string ShortCode { get; private set; }
     public OriginalUrl OriginalUrl { get; private set; }
     public Guid? UserId { get; private set; } // PostgreSQL'deki kullanıcı ile gevşek bağ (Loose Coupling)
-    public int ClickCount { get; private set; }
+    public int ClickCount { get; set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime? ExpiresAt { get; private set; }
 

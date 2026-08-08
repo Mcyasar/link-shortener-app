@@ -15,13 +15,18 @@ public sealed class GetUserLinksQueryHandler : IRequestHandler<GetUserLinksQuery
     public async Task<List<ShortenedLinkDto>> Handle(GetUserLinksQuery request, CancellationToken cancellationToken)
     {
         var links = await _linkRepository.GetLinksByUserIdAsync(request.UserId, cancellationToken);
-        var linkStats = await _linkRepository.GetLinksStatsByUserIdAsync(request.UserId, cancellationToken);
+
+        foreach(var link in links)
+        {
+            var linkStats = await _linkRepository.GetShortCodeStatsAsync(link.ShortCode, cancellationToken);
+            link.ClickCount = linkStats.FirstOrDefault()?.ClickCount ?? 0;
+        }
 
         return links.Select(link => new ShortenedLinkDto(
             link.Id,
             link.ShortCode,
             link.OriginalUrl.Value,
-            linkStats.FirstOrDefault(stat => stat.ShortCode == link.ShortCode)?.ClickCount ?? 0,
+            link.ClickCount,
             link.CreatedAt,
             link.ExpiresAt
         )).ToList();
