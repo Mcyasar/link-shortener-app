@@ -148,21 +148,24 @@ public static class DependencyInjection
                     h.Password("guest");
                 });
 
-                // Event Endpoint Tanımı
-                cfg.ReceiveEndpoint("link-click-events-queue", e =>
+                if (isWorkerEnabled)
                 {
-                    // Concurrent Message Prefetch
-                    e.PrefetchCount = 100;
-
-                    // RabbitMQ tarafında 5 saniye veya 100 mesajlık Batching:
-                    e.Batch<LinkClickedEvent>(b =>
+                    // Event Endpoint Tanımı
+                    cfg.ReceiveEndpoint("link-click-events-queue", e =>
                     {
-                        b.MessageLimit = 100;
-                        b.TimeLimit = TimeSpan.FromSeconds(5);
-                    });
+                        // Concurrent Message Prefetch
+                        e.PrefetchCount = 100;
 
-                    e.ConfigureConsumer<LinkClickedRabbitMQConsumer>(context);
-                });
+                        // RabbitMQ tarafında 5 saniye veya 100 mesajlık Batching:
+                        e.Batch<LinkClickedEvent>(b =>
+                        {
+                            b.MessageLimit = 100;
+                            b.TimeLimit = TimeSpan.FromSeconds(5);
+                        });
+
+                        e.ConfigureConsumer<LinkClickedRabbitMQConsumer>(context);
+                    });
+                }                
             });
 
             // 🔥 Kafka bir Rider olarak eklenmelidir
