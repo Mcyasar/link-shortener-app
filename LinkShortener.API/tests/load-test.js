@@ -32,7 +32,7 @@ const BASE_URL = 'http://linkshortener.local'; // Veya Ingress adresiniz
 
 export default function () {
   // Test edilecek örnek kısa kod
-  const shortCode = 'EZ1t88V';
+  const shortCode = 'iZr6N9c';
 
   const params = {
     // headers: {

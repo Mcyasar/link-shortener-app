@@ -22,6 +22,7 @@ using MassTransit;
 using LinkShortener.Application.Configurations;
 using LinkShortener.Infrastructure.Consumers;
 using LinkShortener.Domain.Entities;
+using LinkShortener.Application.Features.ShortenedLinks.Events;
 
 namespace LinkShortener.Infrastructure;
 
@@ -139,50 +140,75 @@ public static class DependencyInjection
             // İleride yazacağımız Consumer sınıflarını otomatik tarayıp bulur
             x.SetKebabCaseEndpointNameFormatter();
 
-            // 🔥 Kafka bir Rider olarak eklenmelidir
-            x.AddRider(rider =>
+            x.UsingRabbitMq((context, cfg) =>
             {
-                // 1. Consumer'ı Rider'a ekleyin
-                rider.AddConsumer<LinkClickedConsumer>();
-
-                // 2. UsingKafka metodunu 'rider' üzerinden çağırın
-                rider.UsingKafka((context, cfg) =>
+                cfg.Host("localhost", "/", h =>
                 {
-                    cfg.Host("local-docker-host:9093"); // Docker Compose içindeki Kafka servisinizin adresi
+                    h.Username("guest");
+                    h.Password("guest");
+                });
 
-                    if (isWorkerEnabled)
+                // Event Endpoint Tanımı
+                cfg.ReceiveEndpoint("link-click-events-queue", e =>
+                {
+                    // Concurrent Message Prefetch
+                    e.PrefetchCount = 100;
+
+                    // RabbitMQ tarafında 5 saniye veya 100 mesajlık Batching:
+                    e.Batch<LinkClickedEvent>(b =>
                     {
-                        // Debezium'un oluşturduğu topic'i dinliyoruz
-                        // Topic adı: database.server.name.schema.table (örn: linkshortener-postgres.public.LinkClickOutbox)
-                        cfg.TopicEndpoint<string, DebeziumMessage>("debezium.public.LinkClickOutbox", "link-shortener-group", e =>
-                        {
-                            // Debezium'un oluşturduğu topic'i dinliyoruz
-                            // Topic adı: database.server.name.schema.table (örn: linkshortener-postgres.public.LinkClickOutbox)
-                            // Otomatik retry ve hatalı mesaj (DLQ) yönetimi
-                            //e.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(2)));
+                        b.MessageLimit = 100;
+                        b.TimeLimit = TimeSpan.FromSeconds(5);
+                    });
 
-                            // DynamoDB 1.000 WCU sınırını tek pod üzerinde %100 garantiye alan Rate Limiter:
-                            //e.UseRateLimit(800, TimeSpan.FromSeconds(1));
-
-                            // 1. Deserializer Ayarı: Debezium mesajları Kafka'dan raw JSON geldiği için
-                            e.UseRawJsonDeserializer();
-                        
-                            // 2. Prefetch Count: Kafka'dan bir kerede çekilecek mesaj sayısı
-                            e.PrefetchCount = 100;
-                        
-                            // 3. Batching Ayarı: 100 mesaj veya 5 saniye dolunca paketi Consumer'a teslim et
-                            e.Batch<DebeziumMessage>(b =>
-                            {
-                                b.MessageLimit = 100;
-                                b.TimeLimit = TimeSpan.FromSeconds(5);
-                            });
-                        
-                            // 4. Consumer Kaydı
-                            e.ConfigureConsumer<LinkClickedConsumer>(context);
-                        });
-                    }
+                    e.ConfigureConsumer<LinkClickedRabbitMQConsumer>(context);
                 });
             });
+
+            // 🔥 Kafka bir Rider olarak eklenmelidir
+            // x.AddRider(rider =>
+            // {
+            //     // 1. Consumer'ı Rider'a ekleyin
+            //     rider.AddConsumer<LinkClickedConsumer>();
+
+            //     // 2. UsingKafka metodunu 'rider' üzerinden çağırın
+            //     rider.UsingKafka((context, cfg) =>
+            //     {
+            //         cfg.Host("local-docker-host:9093"); // Docker Compose içindeki Kafka servisinizin adresi
+
+            //         if (isWorkerEnabled)
+            //         {
+            //             // Debezium'un oluşturduğu topic'i dinliyoruz
+            //             // Topic adı: database.server.name.schema.table (örn: linkshortener-postgres.public.LinkClickOutbox)
+            //             cfg.TopicEndpoint<string, DebeziumMessage>("debezium.public.LinkClickOutbox", "link-shortener-group", e =>
+            //             {
+            //                 // Debezium'un oluşturduğu topic'i dinliyoruz
+            //                 // Topic adı: database.server.name.schema.table (örn: linkshortener-postgres.public.LinkClickOutbox)
+            //                 // Otomatik retry ve hatalı mesaj (DLQ) yönetimi
+            //                 //e.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(2)));
+
+            //                 // DynamoDB 1.000 WCU sınırını tek pod üzerinde %100 garantiye alan Rate Limiter:
+            //                 //e.UseRateLimit(800, TimeSpan.FromSeconds(1));
+
+            //                 // 1. Deserializer Ayarı: Debezium mesajları Kafka'dan raw JSON geldiği için
+            //                 e.UseRawJsonDeserializer();
+                        
+            //                 // 2. Prefetch Count: Kafka'dan bir kerede çekilecek mesaj sayısı
+            //                 e.PrefetchCount = 100;
+                        
+            //                 // 3. Batching Ayarı: 100 mesaj veya 5 saniye dolunca paketi Consumer'a teslim et
+            //                 e.Batch<DebeziumMessage>(b =>
+            //                 {
+            //                     b.MessageLimit = 100;
+            //                     b.TimeLimit = TimeSpan.FromSeconds(5);
+            //                 });
+                        
+            //                 // 4. Consumer Kaydı
+            //                 e.ConfigureConsumer<LinkClickedConsumer>(context);
+            //             });
+            //         }
+            //     });
+            // });
 
             // 🔥 KRİTİK EKSİK: MassTransit'in arka plan servisini (HostedService) 
             // ve ana otobüsünü çalıştırması için In-Memory Transport tanımı:

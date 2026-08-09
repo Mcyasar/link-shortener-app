@@ -193,6 +193,15 @@ app.UseExceptionHandler(exceptionHandlerApp =>
         var exceptionHandlerFeature = context.Features.Get<IExceptionHandlerFeature>();
         var exception = exceptionHandlerFeature?.Error;
 
+        if (exception != null)
+        {
+            // Logger servisini DI Container'dan alıyoruz
+            var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+            // 🚨 Hatayı StackTrace ile birlikte LogError olarak basıyoruz
+            logger.LogError(exception, "İstek işlenirken bir hata oluştu. Path: {Path}, Exception: {Message}", 
+                context.Request.Path, exception.Message);
+        }
+
         if (exception is TimeoutRejectedException)
         {
             context.Response.StatusCode = StatusCodes.Status504GatewayTimeout;
@@ -202,6 +211,11 @@ app.UseExceptionHandler(exceptionHandlerApp =>
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
             await context.Response.WriteAsJsonAsync(new { error = "Devre kesici açık, servis geçici olarak kullanım dışı." });
+        }
+        else
+        {
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await context.Response.WriteAsJsonAsync(new { error = "Bilinmeyen bir hata oluştu." });
         }
     });
 });
