@@ -35,6 +35,10 @@ public static class DependencyInjection
         var issuer = configuration["JwtSettings:Issuer"] ?? "LinkShortenerAPI";
         var audience = configuration["JwtSettings:Audience"] ?? "LinkShortenerAPI";
 
+        var rabbitHost = configuration["RabbitMQ:Host"] ?? "local-docker-host";
+        var rabbitUser = configuration["RabbitMQ:Username"] ?? "guest";
+        var rabbitPass = configuration["RabbitMQ:Password"] ?? "guest";
+
         services.AddAuthentication(options =>
         {
             options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -142,10 +146,10 @@ public static class DependencyInjection
 
             x.UsingRabbitMq((context, cfg) =>
             {
-                cfg.Host("localhost", "/", h =>
+                cfg.Host(rabbitHost, "/", h =>
                 {
-                    h.Username("guest");
-                    h.Password("guest");
+                    h.Username(rabbitUser ?? "guest");
+                    h.Password(rabbitPass ?? "guest");
                 });
 
                 if (isWorkerEnabled)
