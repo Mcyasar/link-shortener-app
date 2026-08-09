@@ -212,10 +212,10 @@ public static class DependencyInjection
 
             // 🔥 KRİTİK EKSİK: MassTransit'in arka plan servisini (HostedService) 
             // ve ana otobüsünü çalıştırması için In-Memory Transport tanımı:
-            x.UsingInMemory((context, cfg) =>
-            {
-                cfg.ConfigureEndpoints(context);
-            });
+            // x.UsingInMemory((context, cfg) =>
+            // {
+            //     cfg.ConfigureEndpoints(context);
+            // });
 
             // RabbitMQ Konfigürasyonu
             // x.UsingRabbitMq(...) // Bu blok artık kullanılmadığı için kaldırıldı
