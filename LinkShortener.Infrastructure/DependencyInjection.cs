@@ -134,7 +134,7 @@ public static class DependencyInjection
         {
             if (isWorkerEnabled)
             {
-                x.AddConsumer<LinkClickedConsumer>();
+                x.AddConsumer<LinkClickedRabbitMQConsumer>();
             }
 
             // İleride yazacağımız Consumer sınıflarını otomatik tarayıp bulur
