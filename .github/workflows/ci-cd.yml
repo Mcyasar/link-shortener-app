@@ -17,6 +17,25 @@ jobs:
   #     uses: actions/setup-dotnet@v4
   #     with:
   #       dotnet-version: '9.0.x'
+
+  k6-local-test:
+    # 'ubuntu-latest' YERİNE 'self-hosted' yazıyoruz!
+    # Bu sayede job doğrudan SİZİN Docker Desktop çalışan makinenizde koşar.
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Start Docker Desktop Containers
+        run: |
+          docker compose down
+          docker compose up -d --build
+
+      - name: Run K6 Load Test Locally
+        run: |
+          # Bilgisayarınızda k6 yüklüyse doğrudan çalıştırabilir veya k6 docker imajını kullanabilirsiniz
+          docker run --rm -i --network=host grafana/k6 run - < tests/k6/load-test-dynamic.js
   
   build-and-push:
     name: Build & Push to Docker Hub and Update GitOps
