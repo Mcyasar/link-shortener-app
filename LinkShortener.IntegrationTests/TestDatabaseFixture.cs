@@ -1,5 +1,6 @@
 ﻿using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
+using Amazon.Runtime;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Testcontainers.Redis;
@@ -25,10 +26,21 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
         // Konteynerleri asenkron olarak arka arkaya ayağa kaldırıyoruz
         await Task.WhenAll(_redisContainer.StartAsync(), _dynamoDbContainer.StartAsync());
 
-        // DynamoDB için dinamik üretilen bağlantı adresini alıyoruz
+        // Host ve Port'u Testcontainers üzerinden dinamik alıyoruz
+        var dynamoHost = _dynamoDbContainer.Hostname;
         var dynamoPort = _dynamoDbContainer.GetMappedPublicPort(8000);
-        var config = new AmazonDynamoDBConfig { ServiceURL = $"http://localhost:{dynamoPort}" };
-        DynamoDbClient = new AmazonDynamoDBClient(config);
+
+        // DynamoDB için dinamik üretilen bağlantı adresini alıyoruz
+        var config = new AmazonDynamoDBConfig
+        {
+            ServiceURL = $"http://{dynamoHost}:{dynamoPort}",
+            AuthenticationRegion = "eu-central-1"
+        };
+
+        // AWS SDK'nın zincir hatası vermesini engellemek için dummy credentials geçiyoruz
+        var credentials = new BasicAWSCredentials("test-key", "test-secret");
+    
+        DynamoDbClient = new AmazonDynamoDBClient(credentials, config);
 
         // DynamoDB şemasız olsa da "ShortenedLinks" tablosunun var olması şarttır.
         // Test başlamadan önce tabloyu otomatik oluşturuyoruz.
