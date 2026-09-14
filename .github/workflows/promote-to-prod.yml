@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Test ortamında başarıyla doğrulanmış İmaj Etiketi (Commit SHA veya SemVer):'
+        required: true
+        type: string
+      release_note:
+        description: 'Canlıya çıkış açıklaması / Sürüm notu:'
+        required: false
+        default: 'Routine release'
+        type: string
+
+env:
+  GITOPS_REPO: "${{ github.repository_owner }}/link-shortener-gitops"
+  GITOPS_PROD_FILE: "environments/values-prod.yaml"
+
+jobs:
+  promote:
+    name: Promote Image to Prod Manifest
+    runs-on: ubuntu-latest
+    
+    # 👈 Bu satır Settings -> Environments altındaki 'production' kurallarını devreye sokar.
+    # Belirlenen yetkililer onay butonuna basmadan aşağıdaki adımlar ÇALIŞMAZ.
+    environment: 
+        name: production
+        url: http://prod.linkshortener.local
+
+    steps:
+      - name: Install yq and jq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update values-prod.yaml via GitHub REST API (No Clone)
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_PAT }}
+          TARGET_TAG: ${{ inputs.image_tag }}
+          NOTE: ${{ inputs.release_note }}
+          TRIGGERED_BY: ${{ github.actor }}
+        run: |
+          echo "🚀 Prodüksiyona terfi başlatıldı."
+          echo "Yetkili: $TRIGGERED_BY"
+          echo "Hedef İmaj Etiketi: $TARGET_TAG"
+          echo "Not: $NOTE"
+
+          # 1. values-prod.yaml dosyasının mevcut durumunu ve SHA'sını çek
+          API_RESPONSE=$(gh api "repos/${{ env.GITOPS_REPO }}/contents/${{ env.GITOPS_PROD_FILE }}")
+          CURRENT_SHA=$(echo "$API_RESPONSE" | jq -r .sha)
+
+          # 2. İçeriği decode et
+          RAW_CONTENT=$(echo "$API_RESPONSE" | jq -r .content | tr -d '\n' | base64 -d)
+
+          # 3. yq ile image.tag alanını güncelle ve base64 formatına çevir
+          UPDATED_BASE64=$(echo "$RAW_CONTENT" | yq eval ".image.tag = \"$TARGET_TAG\"" - | base64 -w 0)
+
+          # 4. Klonlamadan doğrudan API üzerinden commit at
+          COMMIT_MSG="chore(prod): promote image to $TARGET_TAG by $TRIGGERED_BY - $NOTE [skip ci]"
+          
+          gh api --method PUT "repos/${{ env.GITOPS_REPO }}/contents/${{ env.GITOPS_PROD_FILE }}" \
+            -f message="$COMMIT_MSG" \
+            -f content="$UPDATED_BASE64" \
+            -f sha="$CURRENT_SHA" \
+            -f branch="main"
+
+          echo "✅ GitOps reposundaki values-prod.yaml başarıyla güncellendi!"
+          echo "Argo CD senkronizasyonu başlatacak."

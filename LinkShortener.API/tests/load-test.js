@@ -5,8 +5,6 @@ import { check, sleep } from 'k6';
 export const options = {
   redirects: 0,
   noConnectionReuse: false,
-  //vus: 10,
-  //duration: '30s',
   stages: [
     { duration: '2s', target: 10 },  // 2 saniyede 10 VU'ya çık (Socket pool ısınsın)
     { duration: '1m', target: 100 }, // 1 dakika sabit kal
@@ -14,38 +12,32 @@ export const options = {
     { duration: '1m', target: 500 }, // 1 dakika sabit kal
     { duration: '3m', target: 0 },
   ],
-    discardResponseBodies: true, // Yanıt gövdelerini saklama, soket yükünü hafifletir
-//   stages: [
-//     { duration: '30s', target: 1 },   // 30 saniyede 50 kullanıcıya çık (Ramp-up)
-//     { duration: '1m',  target: 5 },  // 1 dakika boyunca 500 anlık kullanıcıyla yükle
-//     { duration: '2m',  target: 10 }, // 2 dakika boyunca 1000 anlık kullanıcıya kadar zorla (Peak)
-//     { duration: '30s', target: 0 },    // 30 saniyede yükü sıfırla (Ramp-down)
-//   ],
-//   thresholds: {
-//     // Performans Kriterlerimiz (SLA):
-//     http_req_duration: ['p(95)<100'], // İsteklerin %95'i 100 ms'nin altında yanıt vermeli!
-//     http_req_failed: ['rate<0.01'],   // Hata oranı %1'in altında olmalı!
-//   },
+  discardResponseBodies: true, // Yanıt gövdelerini saklama, soket yükünü hafifletir
+  // CI/CD kapısı: Bu eşikler aşılırsa k6 non-zero exit code döner, pipeline durur
+  thresholds: {
+    http_req_failed: ['rate<0.01'],      // Hata oranı %1'in altında olmalı
+    http_req_duration: ['p(95)<150'],    // İsteklerin %95'i 150ms altında yanıt vermeli
+  },
 };
 
-const BASE_URL = 'http://linkshortener.local'; // Veya Ingress adresiniz
+const BASE_URL = __ENV.TARGET_BASE_URL || 'http://linkshortener-svc';
+const SHORT_CODE = __ENV.TEST_SHORT_CODE || 'iZr6N9c';
+const HOST_HEADER = __ENV.TARGET_HOST_HEADER || '';
 
 export default function () {
-  // Test edilecek örnek kısa kod
-  const shortCode = 'iZr6N9c';
-
   const params = {
-    // headers: {
-    //   'Host': 'linkshortener.local',
-    // },
-    redirects: 0, // 302 Redirect yanıtını doğrudan yakalamak için takibi kapatıyoruz
-    timeout: '30s', // 5 saniye içinde yanıt gelmezse soketi açık bırakma
+    redirects: 0,
+    timeout: '30s',
+    headers: {},
   };
 
-  // HTTP GET İstegi (Yönlendirme / Tıklama Senaryosu)
-  const res = http.get(`http://10.96.40.37/api/links/${shortCode}`, params);
+  // Eğer Ingress IP'sine gidiliyorsa Host header'ı ekle
+  if (HOST_HEADER) {
+    params.headers['Host'] = HOST_HEADER;
+  }
 
-  // Eğer istek başarısız olduysa (EOF, timeout, connection refused vs.)
+  const res = http.get(`${BASE_URL}/api/links/${SHORT_CODE}`, params);
+
   if (res.error_code !== 0 || res.status === 0) {
     console.log(`❌ HATA ALINDI! 
       VU: ${__VU} | Iteration: ${__ITER}
@@ -55,16 +47,10 @@ export default function () {
       Duration  : ${res.timings.duration} ms`);
   }
 
-//   if (res.status === 302) {
-//     console.log("302 Yönlendirme Adresi -> ", res.headers['Location']);
-//   }
-
-  // BAŞARI KONTROLLERİ (Assertions)
   check(res, {
     'Status code is 302 or 200': (r) => r.status === 302 || r.status === 200,
     'Response time < 100ms': (r) => r.timings.duration < 100,
   });
 
-  // Gerçekçi kullanıcı davranışı simülasyonu (0.1sn bekleme)
   sleep(0.1);
 }

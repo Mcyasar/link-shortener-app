@@ -10,7 +10,7 @@ public sealed class ApplicationDbContext : DbContext
     }
 
     public DbSet<User> Users => Set<User>();
-     public DbSet<LinkClickOutbox> LinkClickOutbox => Set<LinkClickOutbox>();
+    public DbSet<LinkClickOutbox> LinkClickOutbox => Set<LinkClickOutbox>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

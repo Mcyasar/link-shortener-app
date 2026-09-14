@@ -4,87 +4,122 @@ on:
   push:
     branches: [ "main" ] # main branch'ine push yapıldı��nda �al���r
 
+env:
+  REGISTRY_IMAGE: mcysrdckr/link_shortener
+  GITOPS_REPO: ${{ github.repository_owner }}/link-shortener-gitops
+  TARGET_FILE: environments/values-test.yaml
+
 jobs:
-  # test:
-  #   name: Run Integration Tests (Testcontainers)
-  #   runs-on: ubuntu-latest
 
-  #   steps:
-  #   - name: Checkout Code
-  #     uses: actions/checkout@v4
+  unit-and-integration-tests:
+    name: Run Unit & Integration Tests    
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-  #   - name: Setup .NET 9
-  #     uses: actions/setup-dotnet@v4
-  #     with:
-  #       dotnet-version: '9.0.x'
+    - name: Setup .NET 9
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
 
-  k6-local-test:
-    # 'ubuntu-latest' YERİNE 'self-hosted' yazıyoruz!
-    # Bu sayede job doğrudan SİZİN Docker Desktop çalışan makinenizde koşar.
+    - name: Restore Dependencies
+      run: dotnet restore
+
+    - name: Run Tests (Including Testcontainers)
+      run: dotnet test --no-restore --configuration Release --verbosity normal
+
+  
+  build-and-push:
+    name: Build & Push to Docker Hub and Update GitOps
+    needs: unit-and-integration-tests
+    runs-on: ubuntu-latest
+    outputs:
+      k6_enabled: ${{ steps.update-gitops-api.outputs.k6_enabled }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Docker Image
+        id: build-image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t ${{ env.REGISTRY_IMAGE }}:$IMAGE_TAG -f Dockerfile .
+          docker push ${{ env.REGISTRY_IMAGE }}:$IMAGE_TAG
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update GitOps Manifest via GitHub API (No Clone)
+        id: update-gitops-api
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_PAT }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "GitOps reposundaki dosya API üzerinden okunuyor..."
+          # 1. Dosyanın mevcut Base64 içeriğini ve Git SHA'sını GitHub API'den çek
+          RESPONSE=$(gh api repos/${{ env.GITOPS_REPO }}/contents/${{ env.TARGET_FILE }})
+          CURRENT_BLOB_SHA=$(echo "$RESPONSE" | jq -r .sha)
+          RAW_CONTENT=$(echo "$RESPONSE" | jq -r .content | tr -d '\n\r' | base64 -d)
+
+          # 2. Mevcut içerikten k6Test.enabled değerini sonraki job için oku
+          K6_FLAG=$(echo "$RAW_CONTENT" | yq eval '.k6Test.enabled // false' -)
+          echo "k6Test.enabled: $K6_FLAG"
+          echo "k6_enabled=$K6_FLAG" >> $GITHUB_OUTPUT
+
+          # 3. yq ile dosya içeriğinde image.tag'i güncelle ve tekrar Base64'e çevir
+          UPDATED_BASE64=$(echo "$RAW_CONTENT" | yq eval ".image.tag = \"${{ env.IMAGE_TAG }}\"" - | base64 -w 0)
+
+          # 4. Klonlamadan tek bir HTTP PUT isteğiyle GitOps reposuna commit at
+          gh api --method PUT repos/${{ env.GITOPS_REPO }}/contents/${{ env.TARGET_FILE }} \
+            -f message="chore(test): update backend image tag to ${{ env.IMAGE_TAG }} [skip ci]" \
+            -f content="$UPDATED_BASE64" \
+            -f sha="$CURRENT_BLOB_SHA" \
+            -f branch="main"
+
+          echo "GitOps reposu API üzerinden güncellendi!"
+
+  performance-test:
+    name: Run Ephemeral Performance Task (Test Env)
+    needs: build-and-push
+    if: needs.build-and-push.outputs.k6_enabled == 'true'
     runs-on: self-hosted
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Start Docker Desktop Containers
+      - name: Wait for Test Environment Rollout & Ingress Health
         run: |
-          docker compose down
-          docker compose up -d --build
+          echo "Kubernetes test deployment rollout durumu kontrol ediliyor..."
+          kubectl rollout status deployment/linkshortener-test -n test-environment --timeout=90s
 
-      - name: Run K6 Load Test Locally
+          echo "Test ortamı Ingress sağlık kontrolü bekleniyor..."
+          timeout 60s bash -c 'until curl -s -f -H "Host: test.linkshortener.local" http://host.docker.internal/api/health; do sleep 2; done'
+          echo "Test ortamı ayakta ve yanıt veriyor!"
+
+      - name: Execute k6 Run Task (Docker Ephemeral)
         run: |
-          # Bilgisayarınızda k6 yüklüyse doğrudan çalıştırabilir veya k6 docker imajını kullanabilirsiniz
-          docker run --rm -i --network=host grafana/k6 run - < tests/k6/load-test-dynamic.js
-  
-  build-and-push:
-    name: Build & Push to Docker Hub and Update GitOps
-    runs-on: ubuntu-latest
-    
-    steps:
-    # 1. Kodu GitHub runner'a çekiyoruz
-    - name: Checkout Code
-      uses: actions/checkout@v4
+          docker run --rm \
+            -v "${{ github.workspace }}/tests:/tests:ro" \
+            --add-host=host.docker.internal:host-gateway \
+            -e TARGET_BASE_URL="http://host.docker.internal" \
+            -e TARGET_HOST_HEADER="test.linkshortener.local" \
+            -e TEST_SHORT_CODE="iZr6N9c" \
+            grafana/k6:latest run /tests/load-test.js
 
-    # 2. Docker Hub'a giriş yapıyoruz
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-
-    # 3. Docker imajını build edip Docker Hub'a pushluyoruz (Tag olarak Commit SHA kullanıyoruz)
-    - name: Build and push Docker image
-      id: build-image
-      env:
-        IMAGE_NAME: mcysrdckr/link_shortener
-        IMAGE_TAG: ${{ github.sha }} # Commit SHA'sını tag olarak kullanıyoruz
-      run: |
-        # LinkShortener.API projesinin Dockerfile'ını kullanarak imajı oluştur
-        docker build -t $IMAGE_NAME:$IMAGE_TAG -f Dockerfile .
-        docker push $IMAGE_NAME:$IMAGE_TAG
-        echo "image=$IMAGE_NAME:$IMAGE_TAG" >> $GITHUB_OUTPUT
-
-    # 4. GitOps reposundaki imaj tag'ini güncelliyoruz (CD Tetikleme)
-    - name: Update GitOps Manifest
-      env:
-        GITOPS_TOKEN: ${{ secrets.GITOPS_PAT }} # GitOps reposuna erişim için PAT
-        IMAGE_FULL_NAME: mcysrdckr/link_shortener # Docker Hub'daki tam imaj adı
-        IMAGE_TAG: ${{ github.sha }} # Yeni imaj tag'i
-      run: |
-        # GitOps reposunu geçici olarak klonluyoruz
-        git config --global user.email "action@github.com"
-        git config --global user.name "GitHub Action"
-        git clone https://${{ env.GITOPS_TOKEN }}@github.com/${{ github.repository_owner }}/link-shortener-gitops.git
-        cd link-shortener-gitops/environments/local/app-resources
-        
-        # Kustomize dosyasındaki imaj adını ve tag'ini güncelliyoruz
-        # newName: mcysrdckr/link_shortener
-        # newTag: <commit-sha>
-        sed -i "s|newName: .*|newName: ${IMAGE_FULL_NAME}|g" kustomization.yaml
-        sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|g" kustomization.yaml
-        
-        # Değişiklikleri GitOps reposuna pushluyoruz
-        git add kustomization.yaml
-        git commit -m "chore: update backend image tag to ${IMAGE_TAG} [skip ci]" # [skip ci] ile bu commit'in tekrar CI tetiklemesini önleriz
-        git push origin main
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Performans SLA eşikleri aşıldı! Test ortamı SLA hedeflerini karşılayamadı."
