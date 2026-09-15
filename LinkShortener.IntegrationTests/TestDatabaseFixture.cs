@@ -41,7 +41,7 @@ public sealed class TestDatabaseFixture: WebApplicationFactory<Program>, IAsyncL
         ServiceURL = $"http://{dynamoHost}:{dynamoPort}",
         
         // 2. RegionEndpoint ve AuthenticationRegion'ı açıkça eşleyin
-        RegionEndpoint = RegionEndpoint.EUCentral1,
+        //RegionEndpoint = RegionEndpoint.EUCentral1,
         AuthenticationRegion = "eu-central-1",
         
         // 3. Yerel HTTP bağlantısı için SSL doğrulamalarını devre dışı bırakın
