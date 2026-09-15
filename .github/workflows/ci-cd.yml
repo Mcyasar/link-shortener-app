@@ -103,7 +103,7 @@ jobs:
       - name: Wait for Test Environment Rollout & Ingress Health
         run: |
           echo "Kubernetes test deployment rollout durumu kontrol ediliyor..."
-          kubectl rollout status deployment/linkshortener-test -n test-environment --timeout=90s
+          kubectl rollout status deployment/linkshortener-test -n linkshortener-test --timeout=90s
 
           echo "Test ortamı Ingress sağlık kontrolü bekleniyor..."
           timeout 60s bash -c 'until curl -s -f -H "Host: test.linkshortener.local" http://host.docker.internal/api/health; do sleep 2; done'
