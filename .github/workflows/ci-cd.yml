@@ -101,13 +101,37 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Wait for Test Environment Rollout & Ingress Health
+        shell: bash
         run: |
           echo "Kubernetes test deployment rollout durumu kontrol ediliyor..."
-          kubectl rollout status deployment/linkshortener-test -n linkshortener-test --timeout=90s
+          kubectl rollout status deployment/linkshortener-test -n linkshortener-test --timeout=120s
 
-          echo "Test ortamı Ingress sağlık kontrolü bekleniyor..."
-          timeout 60s bash -c 'until curl -s -f -H "Host: linkshortener.test" http://host.docker.internal/api/health; do sleep 2; done'
-          echo "Test ortamı ayakta ve yanıt veriyor!"
+          echo "Test ortamı Ingress sağlık kontrolü bekleniyor (linkshortener.test)..."
+
+          ATTEMPTS=0
+          MAX_ATTEMPTS=24
+          SUCCESS=false
+
+          while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+            # Ingress Host başlığı linkshortener.test olarak güncellendi
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: linkshortener.test" http://host.docker.internal/api/health || true)
+            
+            if [ "$HTTP_STATUS" -eq 200 ]; then
+              SUCCESS=true
+              break
+            fi
+
+            echo "Sağlık kontrolü bekleniyor (HTTP $HTTP_STATUS)... Tekrar denenecek (5 sn)"
+            sleep 5
+            ATTEMPTS=$((ATTEMPTS + 1))
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ Hata: Test ortamı Ingress zaman aşımına uğradı ve HTTP 200 dönmedi!"
+            exit 1
+          fi
+
+          echo "✅ Test ortamı ayakta ve yanıt veriyor!"
 
       - name: Execute k6 Run Task (Docker Ephemeral)
         run: |
