@@ -146,6 +146,8 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MinResponseDataRate = null;
 });
 
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
 app.UseRouting();
@@ -219,5 +221,7 @@ app.UseExceptionHandler(exceptionHandlerApp =>
         }
     });
 });
+
+app.MapHealthChecks("/api/health");
 
 app.Run();
