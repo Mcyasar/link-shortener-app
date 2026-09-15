@@ -1,13 +1,20 @@
-﻿using Amazon.DynamoDBv2;
+﻿using Amazon;
+using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
 using Amazon.Runtime;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.VisualStudio.TestPlatform.TestHost;
 using Testcontainers.Redis;
 
 namespace LinkShortener.IntegrationTests;
 
-public sealed class TestDatabaseFixture : IAsyncLifetime
+public sealed class TestDatabaseFixture: WebApplicationFactory<Program>, IAsyncLifetime
 {
     // Testcontainers tanımları
     private readonly RedisContainer _redisContainer = new RedisBuilder("redis:7-alpine")
@@ -15,42 +22,56 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
 
     private readonly IContainer _dynamoDbContainer = new ContainerBuilder("amazon/dynamodb-local:latest")
         .WithPortBinding(8000, true) // Rastgele boş bir porta eşle (Çakışmayı önler)
-        .WithCommand("-jar", "DynamoDBLocal.jar", "-sharedDb")
+        .WithCommand("-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory")
         .Build();
 
     public IAmazonDynamoDB DynamoDbClient { get; private set; } = null!;
     public string RedisConnectionString => _redisContainer.GetConnectionString();
 
     public async Task InitializeAsync()
+{
+    await Task.WhenAll(_redisContainer.StartAsync(), _dynamoDbContainer.StartAsync());
+
+    var dynamoHost = _dynamoDbContainer.Hostname;
+    var dynamoPort = _dynamoDbContainer.GetMappedPublicPort(8000);
+
+    var config = new AmazonDynamoDBConfig
     {
-        // Konteynerleri asenkron olarak arka arkaya ayağa kaldırıyoruz
-        await Task.WhenAll(_redisContainer.StartAsync(), _dynamoDbContainer.StartAsync());
+        // 1. ServiceURL'i net olarak verin
+        ServiceURL = $"http://{dynamoHost}:{dynamoPort}",
+        
+        // 2. RegionEndpoint ve AuthenticationRegion'ı açıkça eşleyin
+        RegionEndpoint = RegionEndpoint.EUCentral1,
+        AuthenticationRegion = "eu-central-1",
+        
+        // 3. Yerel HTTP bağlantısı için SSL doğrulamalarını devre dışı bırakın
+        UseHttp = true
+    };
 
-        // Host ve Port'u Testcontainers üzerinden dinamik alıyoruz
-        var dynamoHost = _dynamoDbContainer.Hostname;
-        var dynamoPort = _dynamoDbContainer.GetMappedPublicPort(8000);
+    // AWS SDK SigV4 imzalayıcısı için standart dummy anahtarlar
+    var credentials = new BasicAWSCredentials("fakeMyKeyId", "fakeSecretAccessKey");
 
-        // DynamoDB için dinamik üretilen bağlantı adresini alıyoruz
-        var config = new AmazonDynamoDBConfig
-        {
-            ServiceURL = $"http://{dynamoHost}:{dynamoPort}",
-            AuthenticationRegion = "eu-central-1"
-        };
+    DynamoDbClient = new AmazonDynamoDBClient(credentials, config);
 
-        // AWS SDK'nın zincir hatası vermesini engellemek için dummy credentials geçiyoruz
-        var credentials = new BasicAWSCredentials("test-key", "test-secret");
-    
-        DynamoDbClient = new AmazonDynamoDBClient(credentials, config);
+    await CreateShortenedLinksTableAsync();
+}
 
-        // DynamoDB şemasız olsa da "ShortenedLinks" tablosunun var olması şarttır.
-        // Test başlamadan önce tabloyu otomatik oluşturuyoruz.
-        await CreateShortenedLinksTableAsync();
-    }
-
-    public async Task DisposeAsync()
+    public new async Task DisposeAsync()
     {
         // Testler bittiğinde konteynerleri kapat ve Docker'ı temizle
         await Task.WhenAll(_redisContainer.DisposeAsync().AsTask(), _dynamoDbContainer.DisposeAsync().AsTask());
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.ConfigureTestServices(services =>
+        {
+            // 4. KRİTİK ADIM: Program.cs'teki gerçek DynamoDB kaydını DI konteynerinden sil
+            services.RemoveAll<IAmazonDynamoDB>();
+
+            // 5. Testcontainers ile ayağa kalkan istemciyi ekle
+            services.AddSingleton<IAmazonDynamoDB>(DynamoDbClient);
+        });
     }
 
     private async Task CreateShortenedLinksTableAsync()
