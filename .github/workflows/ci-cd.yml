@@ -115,7 +115,7 @@ jobs:
           while ($attempts -lt $maxAttempts) {
             try {
               # Ingress Host header ile lokal adrese istek atıyoruz
-              $response = Invoke-WebRequest -Uri "http://localhost/api/health" -Headers @{ "Host" = "linkshortener.test" } -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue
+              $response = Invoke-WebRequest -Uri "http://linkshortener.test/api/health" -Headers @{ "Host" = "linkshortener.test" } -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue
               if ($response.StatusCode -eq 200) {
                 $success = $true
                 break
