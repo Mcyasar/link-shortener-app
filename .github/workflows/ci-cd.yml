@@ -106,7 +106,7 @@ jobs:
           kubectl rollout status deployment/linkshortener-test -n linkshortener-test --timeout=90s
 
           echo "Test ortamı Ingress sağlık kontrolü bekleniyor..."
-          timeout 60s bash -c 'until curl -s -f -H "Host: test.linkshortener.local" http://host.docker.internal/api/health; do sleep 2; done'
+          timeout 60s bash -c 'until curl -s -f -H "Host: linkshortener.test" http://host.docker.internal/api/health; do sleep 2; done'
           echo "Test ortamı ayakta ve yanıt veriyor!"
 
       - name: Execute k6 Run Task (Docker Ephemeral)
@@ -115,7 +115,7 @@ jobs:
             -v "${{ github.workspace }}/tests:/tests:ro" \
             --add-host=host.docker.internal:host-gateway \
             -e TARGET_BASE_URL="http://host.docker.internal" \
-            -e TARGET_HOST_HEADER="test.linkshortener.local" \
+            -e TARGET_HOST_HEADER="linkshortener.test" \
             -e TEST_SHORT_CODE="iZr6N9c" \
             grafana/k6:latest run /tests/load-test.js
 
