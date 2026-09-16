@@ -138,12 +138,12 @@ jobs:
 
       - name: Execute k6 Run Task (Docker Ephemeral)
         run: |
-          docker run --rm \
-            -v "${{ github.workspace }}/tests:/tests:ro" \
-            --add-host=host.docker.internal:host-gateway \
-            -e TARGET_BASE_URL="http://host.docker.internal" \
-            -e TARGET_HOST_HEADER="linkshortener.test" \
-            -e TEST_SHORT_CODE="iZr6N9c" \
+          docker run --rm `
+            -v "${{ github.workspace }}/tests:/tests:ro" `
+            --add-host=host.docker.internal:host-gateway `
+            -e TARGET_BASE_URL="http://host.docker.internal" `
+            -e TARGET_HOST_HEADER="linkshortener.test" `
+            -e TEST_SHORT_CODE="iZr6N9c" `
             grafana/k6:latest run /tests/load-test.js
 
       - name: Notify on Failure
