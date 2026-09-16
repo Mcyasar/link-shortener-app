@@ -138,8 +138,10 @@ jobs:
 
       - name: Execute k6 Run Task (Docker Ephemeral)
         run: |
+          $testsPath = "${{ github.workspace }}\Linkshortener.API\tests".Replace('\', '/')
+
           docker run --rm `
-            -v "${{ github.workspace }}/tests:/tests:ro" `
+            -v "${testsPath}:/tests:ro" `
             --add-host=host.docker.internal:host-gateway `
             -e TARGET_BASE_URL="http://host.docker.internal" `
             -e TARGET_HOST_HEADER="linkshortener.test" `
