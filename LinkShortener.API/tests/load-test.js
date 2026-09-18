@@ -20,9 +20,9 @@ export const options = {
   },
 };
 
-const BASE_URL = __ENV.TARGET_BASE_URL || 'http://linkshortener-svc';
+const BASE_URL = __ENV.TARGET_BASE_URL || 'http://linkshortener.test';
 const SHORT_CODE = __ENV.TEST_SHORT_CODE || 'iZr6N9c';
-const HOST_HEADER = __ENV.TARGET_HOST_HEADER || '';
+const HOST_HEADER = __ENV.TARGET_HOST_HEADER || 'linkshortener.test';
 
 export default function () {
   const params = {
