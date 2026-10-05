@@ -138,14 +138,8 @@ jobs:
 
       - name: Execute k6 Run Task (Docker Ephemeral)
         run: |
-          $testsPath = "${{ github.workspace }}\Linkshortener.API\tests".Replace('\', '/')
-
-          docker run --rm `
-            -v "${testsPath}:/tests:ro" `
-            --add-host=host.docker.internal:host-gateway `
-            -e TARGET_BASE_URL="http://host.docker.internal" `
-            -e TEST_SHORT_CODE="iZr6N9c" `
-            grafana/k6:latest run /tests/load-test.js
+          $testsPath = "${{ github.workspace }}\Linkshortener.API\tests"
+          k6 run -e TARGET_BASE_URL="http://linkshortener.test" -e TEST_SHORT_CODE="iZr6N9c" ${testsPath}\load-test.js
 
       - name: Notify on Failure
         if: failure()
