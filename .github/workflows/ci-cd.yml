@@ -142,7 +142,7 @@ jobs:
 
           docker run --rm `
             -v "${testsPath}:/tests:ro" `
-            --add-host=linkshortener.test:host-gateway `
+            --add-host=linkshortener.test:host.docker.internal `
             -e TARGET_BASE_URL="http://linkshortener.test" `
             -e TEST_SHORT_CODE="iZr6N9c" `
             grafana/k6:latest run /tests/load-test.js

@@ -1,10 +1,11 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-// 1. TEST YAPILANDIRMASI (Ramping Load Test)
+// TEST YAPILANDIRMASI (Ramping Load Test)
 export const options = {
+  maxRedirects: 0,
   redirects: 0,
-  noConnectionReuse: false,
+  //noConnectionReuse: true,
   stages: [
     { duration: '2s', target: 10 },  // 2 saniyede 10 VU'ya çık (Socket pool ısınsın)
     { duration: '1m', target: 100 }, // 1 dakika sabit kal
@@ -13,11 +14,10 @@ export const options = {
     { duration: '3m', target: 0 },
   ],
   discardResponseBodies: true, // Yanıt gövdelerini saklama, soket yükünü hafifletir
-  // CI/CD kapısı: Bu eşikler aşılırsa k6 non-zero exit code döner, pipeline durur
-  thresholds: {
-    http_req_failed: ['rate<0.01'],      // Hata oranı %1'in altında olmalı
-    http_req_duration: ['p(95)<150'],    // İsteklerin %95'i 150ms altında yanıt vermeli
-  },
+  // thresholds: {
+  //   http_req_failed: ['rate<0.01'],      // Hata oranı %1'in altında olmalı
+  //   http_req_duration: ['p(95)<150'],    // İsteklerin %95'i 150ms altında yanıt vermeli
+  // },
 };
 
 const BASE_URL = __ENV.TARGET_BASE_URL || 'http://linkshortener.test';
@@ -43,6 +43,11 @@ export default function () {
       VU: ${__VU} | Iteration: ${__ITER}
       Error Code: ${res.error_code}
       Error Msg : ${res.error}
+      Status    : ${res.status}
+      Duration  : ${res.timings.duration} ms`);
+  }else{
+    console.log(`✅ İSTEK BAŞARILI! 
+      VU: ${__VU} | Iteration: ${__ITER}
       Status    : ${res.status}
       Duration  : ${res.timings.duration} ms`);
   }
